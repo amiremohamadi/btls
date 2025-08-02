@@ -1,0 +1,11 @@
+[package]
+name = "btls"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+itertools = "0.14.0"
+pest = "2.7.15"
+pest_derive = "2.7.15"
+tower-lsp = "0.20.0"
+tokio = { version = "1.47.0", features = ["io-std", "io-util", "macros", "process", "rt-multi-thread", "sync"] }

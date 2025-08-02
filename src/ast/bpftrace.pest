@@ -1,0 +1,35 @@
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+COMMENT = _{ "//" ~ (!NEWLINE ~ ANY)* ~ NEWLINE? }
+LINE_END   = _{ ";" }
+NUMBER = @{ ASCII_DIGIT+ }
+identifier = @{ (ASCII_ALPHANUMERIC | "_" )+ }
+
+attach_point = { (identifier | ":" | "*")+ }
+probe = { attach_point ~ WHITESPACE* ~ block }
+keyword_probe = { ("BEGIN" | "END") }
+block = { "{" ~ (WHITESPACE | comment | statement | error)* ~ "}" }
+
+statement = { probe
+            | assignment
+            | printf_stmt }
+
+assignment = { identifier ~ "=" ~ expr }
+
+printf_stmt = { "printf" ~ "(" ~ (!")" ~ ANY)* ~ ")" }
+
+expr = { string
+       | number
+       | identifier }
+
+string = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
+
+number = @{ ASCII_DIGIT+ }
+
+operator = _{ "+" | "-" | "*" | "/" }
+
+program = ${ SOI ~ (WHITESPACE | comment | probe)* ~ EOI }
+error = { rest_of_line }
+
+comment = ${ "//" ~ " "? ~ comment_content ~ NEWLINE? }
+comment_content = @{ (!NEWLINE ~ ANY)* }
+rest_of_line = @{ (!(NEWLINE | "}") ~ ANY)+ ~ NEWLINE? }
