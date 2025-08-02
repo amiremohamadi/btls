@@ -178,10 +178,28 @@ impl<'a> Node<'a> for Lvalue<'a> {
 }
 
 #[derive(Debug)]
+pub struct BinaryExpr<'a> {
+    pub lhs: Box<Expr<'a>>,
+    pub rhs: Box<Expr<'a>>,
+    pub span: Span<'a>,
+}
+
+impl<'a> Node<'a> for BinaryExpr<'a> {
+    fn as_node(&self) -> &dyn Node<'a> {
+        self
+    }
+
+    fn children(&self) -> Vec<&dyn Node<'a>> {
+        vec![&*self.lhs, &*self.rhs]
+    }
+}
+
+#[derive(Debug)]
 pub enum Expr<'a> {
     Identifier(Box<Identifier<'a>>),
     Integer(Box<IntegerLiteral<'a>>),
     String(Box<StringLiteral<'a>>),
+    BinaryExpr(Box<BinaryExpr<'a>>),
 }
 
 impl<'a> Node<'a> for Expr<'a> {
@@ -194,6 +212,7 @@ impl<'a> Node<'a> for Expr<'a> {
             Self::Integer(n) => vec![n.as_node()],
             Self::String(s) => vec![s.as_node()],
             Self::Identifier(ident) => vec![ident.as_node()],
+            Self::BinaryExpr(expr) => vec![expr.as_node()],
         }
     }
 }
@@ -264,7 +283,8 @@ impl<'a> Node<'a> for Statement<'a> {
 
 #[derive(Debug)]
 pub struct Probe<'a> {
-    pub attach_point: &'a str,
+    pub attach_points: Vec<&'a str>,
+    pub condition: Option<Expr<'a>>,
     pub block: Block<'a>,
     pub span: Span<'a>,
 }

@@ -17,6 +17,8 @@ fn test_sanity() {
     parse_no_errors("tracepoint:sched:* {}");
     parse_no_errors("tracepoint:sched:* { $x = 1; }");
     parse_no_errors("tracepoint:sched:* { $x  = 1   ; }");
+    parse_no_errors("END, BEGIN { $x  = 1   ; }");
+    parse_no_errors("END, BEGIN / 1 / {}");
 }
 
 #[test]
@@ -25,7 +27,7 @@ fn test_probe() {
     assert_eq!(prog.probes.len(), 1);
 
     let probe = &prog.probes[0];
-    assert_eq!(probe.attach_point, "tracepoint:sched:*");
+    assert_eq!(probe.attach_points[0], "tracepoint:sched:*");
     assert_eq!(probe.block.statements.len(), 0);
 }
 

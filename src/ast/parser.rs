@@ -60,13 +60,22 @@ fn convert_expr_list(pair: Pair<Rule>) -> Vec<Expr> {
     exprs
 }
 
-fn convert_expr(pair: Pair<Rule>) -> Expr {
-    assert!(matches!(pair.as_rule(), Rule::expr));
+fn convert_primary_expr(pair: Pair<Rule>) -> Expr {
+    assert!(matches!(pair.as_rule(), Rule::primary));
     let pair = pair.into_inner().exactly_one().unwrap();
     match pair.as_rule() {
         Rule::identifier => Expr::Identifier(Box::new(convert_ident(pair))),
         Rule::number => Expr::Integer(Box::new(convert_int(pair))),
         Rule::string => Expr::String(Box::new(convert_str(pair))),
+        _ => unreachable!(),
+    }
+}
+
+fn convert_expr(pair: Pair<Rule>) -> Expr {
+    assert!(matches!(pair.as_rule(), Rule::expr));
+    let pair = pair.into_inner().exactly_one().unwrap();
+    match pair.as_rule() {
+        Rule::primary => convert_primary_expr(pair),
         _ => unreachable!(),
     }
 }
@@ -134,17 +143,44 @@ fn convert_block(pair: Pair<Rule>) -> Block {
     Block { statements, span }
 }
 
+fn convert_attach_points(pair: Pair<Rule>) -> Vec<&str> {
+    assert!(matches!(pair.as_rule(), Rule::attach_point_list));
+    let mut pairs = pair.into_inner();
+    let Some(first) = pairs.next() else {
+        return Vec::new();
+    };
+
+    let mut attach_points = vec![first.as_str()];
+    pairs.tuples().for_each(|(_, ap)| {
+        attach_points.push(ap.as_str());
+    });
+
+    attach_points
+}
+
 fn convert_probe(pair: Pair<Rule>) -> Probe {
     assert!(matches!(pair.as_rule(), Rule::probe));
     let span = pair.as_span();
     let mut pairs = pair.into_inner();
 
-    let attach_point = pairs.next().unwrap().as_str();
-    let block = convert_block(pairs.next().unwrap());
+    let attach_points = convert_attach_points(pairs.next().unwrap());
+
+    let next = pairs.next().unwrap();
+    let (condition, next) = match next {
+        p if matches!(p.as_rule(), Rule::probe_condition) => {
+            let expr = p.into_inner().exactly_one().unwrap();
+            let next = pairs.next().unwrap();
+            (Some(convert_expr(expr)), next)
+        }
+        _ => (None, next),
+    };
+
+    let block = convert_block(next);
 
     Probe {
         span,
-        attach_point,
+        attach_points,
+        condition,
         block,
     }
 }

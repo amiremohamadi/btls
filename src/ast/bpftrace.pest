@@ -1,12 +1,12 @@
 WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
-COMMENT = _{ "//" ~ (!NEWLINE ~ ANY)* ~ NEWLINE? }
 LINE_END   = _{ ";" }
 NUMBER = @{ ASCII_DIGIT+ }
 identifier = @{ (ASCII_ALPHANUMERIC | "_" )+ }
 
 attach_point = { (identifier | ":" | "*")+ }
-probe = { attach_point ~ WHITESPACE* ~ block }
-keyword_probe = { ("BEGIN" | "END") }
+attach_point_list = { attach_point ~ ("," ~ WHITESPACE* ~ attach_point)* }
+probe_condition = { "/" ~ WHITESPACE* ~ expr ~ WHITESPACE* ~ "/" }
+probe = { attach_point_list ~ WHITESPACE* ~ probe_condition? ~ WHITESPACE* ~ block }
 block = { "{" ~ (WHITESPACE | comment | statement | error)* ~ "}" }
 
 statement = { assignment | call }
@@ -17,17 +17,12 @@ assignment = { "$" ~ identifier ~
                WHITESPACE* ~ expr ~
                WHITESPACE* ~ ";" }
 
-call = { identifier ~
-          WHITESPACE* ~ "(" ~
-          WHITESPACE* ~
-          expr_list ~
-          WHITESPACE* ~ ")" ~
-          WHITESPACE* ~ ";" }
+call = { identifier ~ "(" ~ expr_list ~ ")" ~ ";" }
 
-expr = { string
-       | number
-       | identifier }
+primary = { ( string | number | identifier ) }
+expr = { primary ~ (infix ~ primary)* }
 expr_list = { (expr ~ ("," ~ expr)*)? }
+infix = { "+" | "-" | "*" | "^" | "<" | ">" | "<=" | ">=" | "==" | "!=" | "&&" | "||" }
 
 string = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
 number = @{ ASCII_DIGIT+ }
@@ -36,6 +31,5 @@ operator = _{ "+" | "-" | "*" | "/" }
 program = ${ SOI ~ (WHITESPACE | comment | probe)* ~ EOI }
 error = { rest_of_line }
 
-comment = ${ "//" ~ " "? ~ comment_content ~ NEWLINE? }
-comment_content = @{ (!NEWLINE ~ ANY)* }
+comment = ${ "//" ~ " "? ~ (!NEWLINE ~ ANY)* ~ NEWLINE? }
 rest_of_line = @{ (!(NEWLINE | "}") ~ ANY)+ ~ NEWLINE? }
