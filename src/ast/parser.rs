@@ -3,7 +3,7 @@ use pest::{Parser, iterators::Pair};
 
 use super::{
     AssignOp, Assignment, Block, Call, ErrorStatement, Expr, Identifier, IntegerLiteral, Lvalue,
-    Probe, Program, Statement, UnknownStatement,
+    Probe, Program, Statement, StringLiteral, UnknownStatement,
 };
 
 #[derive(pest_derive::Parser)]
@@ -15,6 +15,15 @@ fn convert_int(pair: Pair<Rule>) -> IntegerLiteral {
     IntegerLiteral {
         value: pair.as_str().parse().unwrap(),
         span: pair.as_span(),
+    }
+}
+
+fn convert_str(pair: Pair<Rule>) -> StringLiteral {
+    assert!(matches!(pair.as_rule(), Rule::string));
+    let span = pair.as_span();
+    StringLiteral {
+        value: pair.as_str(),
+        span,
     }
 }
 
@@ -57,7 +66,7 @@ fn convert_expr(pair: Pair<Rule>) -> Expr {
     match pair.as_rule() {
         Rule::identifier => Expr::Identifier(Box::new(convert_ident(pair))),
         Rule::number => Expr::Integer(Box::new(convert_int(pair))),
-        // Rule::string => {},
+        Rule::string => Expr::String(Box::new(convert_str(pair))),
         _ => unreachable!(),
     }
 }

@@ -37,10 +37,11 @@ fn test_statements() {
         $y = 3;
         $y += 6;
         $x -= 0;
+        $str = "string";
     }"#,
     );
     let probe = &prog.probes[0];
-    assert_eq!(probe.block.statements.len(), 4);
+    assert_eq!(probe.block.statements.len(), 5);
     assert!(matches!(
         probe.block.statements[0],
         Statement::Assignment(_)
@@ -56,9 +57,10 @@ fn test_calls() {
         func(1);
         func(1, 2);
         func( 1, 2, $x );
+        $z = func(69);
     }"#,
     );
     let probe = &prog.probes[0];
-    assert_eq!(probe.block.statements.len(), 5);
+    assert_eq!(probe.block.statements.len(), 6);
     assert!(matches!(probe.block.statements[1], Statement::Call(_)));
 }

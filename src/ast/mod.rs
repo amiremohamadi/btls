@@ -129,6 +129,22 @@ impl<'a> Node<'a> for Identifier<'a> {
 }
 
 #[derive(Debug)]
+pub struct StringLiteral<'a> {
+    pub value: &'a str,
+    pub span: Span<'a>,
+}
+
+impl<'a> Node<'a> for StringLiteral<'a> {
+    fn as_node(&self) -> &dyn Node<'a> {
+        self
+    }
+
+    fn children(&self) -> Vec<&dyn Node<'a>> {
+        Vec::new()
+    }
+}
+
+#[derive(Debug)]
 pub struct IntegerLiteral<'a> {
     pub value: i64,
     pub span: Span<'a>,
@@ -165,6 +181,7 @@ impl<'a> Node<'a> for Lvalue<'a> {
 pub enum Expr<'a> {
     Identifier(Box<Identifier<'a>>),
     Integer(Box<IntegerLiteral<'a>>),
+    String(Box<StringLiteral<'a>>),
 }
 
 impl<'a> Node<'a> for Expr<'a> {
@@ -175,6 +192,7 @@ impl<'a> Node<'a> for Expr<'a> {
     fn children(&self) -> Vec<&dyn Node<'a>> {
         match self {
             Self::Integer(n) => vec![n.as_node()],
+            Self::String(s) => vec![s.as_node()],
             Self::Identifier(ident) => vec![ident.as_node()],
         }
     }
