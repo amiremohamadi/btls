@@ -9,11 +9,14 @@ probe = { attach_point ~ WHITESPACE* ~ block }
 keyword_probe = { ("BEGIN" | "END") }
 block = { "{" ~ (WHITESPACE | comment | statement | error)* ~ "}" }
 
-statement = { probe
-            | assignment
+statement = { assignment
             | printf_stmt }
 
-assignment = { identifier ~ "=" ~ expr }
+assign_op = { "=" | "+=" | "-=" }
+assignment = { "$" ~ identifier ~
+               WHITESPACE* ~ assign_op ~
+               WHITESPACE* ~ expr ~
+               WHITESPACE* ~ ";"}
 
 printf_stmt = { "printf" ~ "(" ~ (!")" ~ ANY)* ~ ")" }
 

@@ -1,11 +1,84 @@
 use itertools::Itertools;
 use pest::{Parser, iterators::Pair};
 
-use super::{Program, Probe, Block, ErrorStatement, Statement, UnknownStatement};
+use super::{
+    AssignOp, Assignment, Block, ErrorStatement, Expr, Identifier, IntegerLiteral, Lvalue, Probe,
+    Program, Statement, UnknownStatement,
+};
 
 #[derive(pest_derive::Parser)]
 #[grammar = "ast/bpftrace.pest"]
 struct BPFTraceParser;
+
+fn convert_int(pair: Pair<Rule>) -> IntegerLiteral {
+    assert!(matches!(pair.as_rule(), Rule::number));
+    IntegerLiteral {
+        value: pair.as_str().parse().unwrap(),
+        span: pair.as_span(),
+    }
+}
+
+fn convert_ident(pair: Pair<Rule>) -> Identifier {
+    assert!(matches!(pair.as_rule(), Rule::identifier));
+    Identifier {
+        name: pair.as_str(),
+        span: pair.as_span(),
+    }
+}
+
+fn convert_assign_op(pair: Pair<Rule>) -> AssignOp {
+    assert!(matches!(pair.as_rule(), Rule::assign_op));
+    match pair.as_str() {
+        "=" => AssignOp::Assign,
+        "+=" => AssignOp::AddAssign,
+        "-=" => AssignOp::SubAssign,
+        _ => unreachable!(),
+    }
+}
+
+fn convert_expr(pair: Pair<Rule>) -> Expr {
+    assert!(matches!(pair.as_rule(), Rule::expr));
+    let pair = pair.into_inner().exactly_one().unwrap();
+    match pair.as_rule() {
+        Rule::identifier => Expr::Identifier(Box::new(convert_ident(pair))),
+        Rule::number => Expr::Integer(Box::new(convert_int(pair))),
+        // Rule::string => {},
+        _ => unreachable!(),
+    }
+}
+
+fn convert_lvalue(pair: Pair<Rule>) -> Lvalue {
+    assert!(matches!(pair.as_rule(), Rule::identifier));
+    let pair = pair.into_inner().exactly_one().unwrap();
+    match pair.as_rule() {
+        Rule::identifier => Lvalue::Identifier(Box::new(convert_ident(pair))),
+        _ => unreachable!(),
+    }
+}
+
+fn convert_assignment(pair: Pair<Rule>) -> Assignment {
+    assert!(matches!(pair.as_rule(), Rule::assignment));
+    let span = pair.as_span();
+    let (lvalue, op, rvalue) = pair.into_inner().collect_tuple().unwrap();
+    // let lvalue = convert_lvalue(lvalue);
+    let lvalue = convert_ident(lvalue);
+    let op = convert_assign_op(op);
+    let rvalue = convert_expr(rvalue);
+    Assignment {
+        lvalue: Lvalue::Identifier(Box::new(lvalue)),
+        rvalue: Box::new(rvalue),
+        span,
+    }
+}
+
+fn convert_statement(pair: Pair<Rule>) -> Statement {
+    assert!(matches!(pair.as_rule(), Rule::statement));
+    let pair = pair.into_inner().exactly_one().unwrap();
+    match pair.as_rule() {
+        Rule::assignment => Statement::Assignment(Box::new(convert_assignment(pair))),
+        _ => unreachable!(),
+    }
+}
 
 fn convert_block(pair: Pair<Rule>) -> Block {
     assert!(matches!(pair.as_rule(), Rule::block));
@@ -19,12 +92,12 @@ fn convert_block(pair: Pair<Rule>) -> Block {
                     span: pair.as_span(),
                 })),
             ))),
-            // Rule::statement => Some(convert_statement()),
+            Rule::statement => Some(convert_statement(pair)),
             Rule::comment => None,
             _ => None,
         })
         .collect();
-    Block { statements , span }
+    Block { statements, span }
 }
 
 fn convert_probe(pair: Pair<Rule>) -> Probe {
@@ -53,7 +126,7 @@ fn convert_prog(pair: Pair<Rule>) -> Program {
             _ => None,
         })
         .collect();
-    Program { probes , span }
+    Program { probes, span }
 }
 
 pub fn parse(input: &str) -> Program {

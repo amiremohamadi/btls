@@ -38,12 +38,10 @@ impl LanguageServer for Backend {
     }
 
     async fn completion(&self, _: CompletionParams) -> Result<Option<CompletionResponse>> {
-        let items = vec![
-            CompletionItem::new_simple(
-                "BEGIN".to_string(),
-                "BEGIN probe".to_string(),
-            ),
-        ];
+        let items = vec![CompletionItem::new_simple(
+            "BEGIN".to_string(),
+            "BEGIN probe".to_string(),
+        )];
         Ok(Some(CompletionResponse::Array(items)))
     }
 

@@ -113,8 +113,101 @@ impl<'a> Node<'a> for ErrorStatement<'a> {
 }
 
 #[derive(Debug)]
+pub struct Identifier<'a> {
+    pub name: &'a str,
+    pub span: Span<'a>,
+}
+
+impl<'a> Node<'a> for Identifier<'a> {
+    fn as_node(&self) -> &dyn Node<'a> {
+        self
+    }
+
+    fn children(&self) -> Vec<&dyn Node<'a>> {
+        Vec::new()
+    }
+}
+
+#[derive(Debug)]
+pub struct IntegerLiteral<'a> {
+    pub value: i64,
+    pub span: Span<'a>,
+}
+
+impl<'a> Node<'a> for IntegerLiteral<'a> {
+    fn as_node(&self) -> &dyn Node<'a> {
+        self
+    }
+
+    fn children(&self) -> Vec<&dyn Node<'a>> {
+        Vec::new()
+    }
+}
+
+#[derive(Debug)]
+pub enum Lvalue<'a> {
+    Identifier(Box<Identifier<'a>>),
+}
+
+impl<'a> Node<'a> for Lvalue<'a> {
+    fn as_node(&self) -> &dyn Node<'a> {
+        self
+    }
+
+    fn children(&self) -> Vec<&dyn Node<'a>> {
+        match self {
+            Self::Identifier(ident) => vec![ident.as_node()],
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum Expr<'a> {
+    Identifier(Box<Identifier<'a>>),
+    Integer(Box<IntegerLiteral<'a>>),
+}
+
+impl<'a> Node<'a> for Expr<'a> {
+    fn as_node(&self) -> &dyn Node<'a> {
+        self
+    }
+
+    fn children(&self) -> Vec<&dyn Node<'a>> {
+        match self {
+            Self::Integer(n) => vec![n.as_node()],
+            Self::Identifier(ident) => vec![ident.as_node()],
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum AssignOp {
+    Assign,
+    AddAssign,
+    SubAssign,
+}
+
+#[derive(Debug)]
+pub struct Assignment<'a> {
+    pub lvalue: Lvalue<'a>,
+    pub rvalue: Box<Expr<'a>>,
+    pub span: Span<'a>,
+}
+
+impl<'a> Node<'a> for Assignment<'a> {
+    fn as_node(&self) -> &dyn Node<'a> {
+        self
+    }
+
+    fn children(&self) -> Vec<&dyn Node<'a>> {
+        vec![&self.lvalue, &*self.rvalue]
+    }
+}
+
+#[derive(Debug)]
 pub enum Statement<'a> {
     Error(Box<ErrorStatement<'a>>),
+    Assignment(Box<Assignment<'a>>),
 }
 
 impl<'a> Node<'a> for Statement<'a> {
@@ -125,6 +218,7 @@ impl<'a> Node<'a> for Statement<'a> {
     fn children(&self) -> Vec<&dyn Node<'a>> {
         match self {
             Self::Error(e) => vec![e.as_node()],
+            Self::Assignment(assign) => vec![assign.as_node()],
         }
     }
 }

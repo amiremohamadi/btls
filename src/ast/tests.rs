@@ -15,6 +15,8 @@ fn test_sanity() {
     parse_no_errors("BEGIN {}");
     parse_no_errors("END {}");
     parse_no_errors("tracepoint:sched:* {}");
+    parse_no_errors("tracepoint:sched:* { $x = 1; }");
+    parse_no_errors("tracepoint:sched:* { $x  = 1   ; }");
 }
 
 #[test]
@@ -25,4 +27,20 @@ fn test_probe() {
     let probe = &prog.probes[0];
     assert_eq!(probe.attach_point, "tracepoint:sched:*");
     assert_eq!(probe.block.statements.len(), 0);
+}
+
+#[test]
+fn test_statements() {
+    let prog = parse(
+        r#"BEGIN {
+        $x = 2;
+        $y  = 3;
+    }"#,
+    );
+    let probe = &prog.probes[0];
+    assert_eq!(probe.block.statements.len(), 2);
+    assert!(matches!(
+        probe.block.statements[0],
+        Statement::Assignment(_)
+    ));
 }
