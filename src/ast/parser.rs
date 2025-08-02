@@ -2,8 +2,8 @@ use itertools::Itertools;
 use pest::{Parser, iterators::Pair};
 
 use super::{
-    AssignOp, Assignment, Block, ErrorStatement, Expr, Identifier, IntegerLiteral, Lvalue, Probe,
-    Program, Statement, UnknownStatement,
+    AssignOp, Assignment, Block, Call, ErrorStatement, Expr, Identifier, IntegerLiteral, Lvalue,
+    Probe, Program, Statement, UnknownStatement,
 };
 
 #[derive(pest_derive::Parser)]
@@ -34,6 +34,21 @@ fn convert_assign_op(pair: Pair<Rule>) -> AssignOp {
         "-=" => AssignOp::SubAssign,
         _ => unreachable!(),
     }
+}
+
+fn convert_expr_list(pair: Pair<Rule>) -> Vec<Expr> {
+    assert!(matches!(pair.as_rule(), Rule::expr_list));
+    let mut pairs = pair.into_inner();
+    let Some(first) = pairs.next() else {
+        return Vec::new();
+    };
+
+    let mut exprs = vec![convert_expr(first)];
+    pairs.tuples().for_each(|(_, expr)| {
+        exprs.push(convert_expr(expr));
+    });
+
+    exprs
 }
 
 fn convert_expr(pair: Pair<Rule>) -> Expr {
@@ -71,11 +86,21 @@ fn convert_assignment(pair: Pair<Rule>) -> Assignment {
     }
 }
 
+fn convert_call(pair: Pair<Rule>) -> Call {
+    assert!(matches!(pair.as_rule(), Rule::call));
+    let span = pair.as_span();
+    let mut pairs = pair.into_inner();
+    let func = convert_ident(pairs.next().unwrap());
+    let args = convert_expr_list(pairs.next().unwrap());
+    Call { func, args, span }
+}
+
 fn convert_statement(pair: Pair<Rule>) -> Statement {
     assert!(matches!(pair.as_rule(), Rule::statement));
     let pair = pair.into_inner().exactly_one().unwrap();
     match pair.as_rule() {
         Rule::assignment => Statement::Assignment(Box::new(convert_assignment(pair))),
+        Rule::call => Statement::Call(Box::new(convert_call(pair))),
         _ => unreachable!(),
     }
 }

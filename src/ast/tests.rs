@@ -34,13 +34,31 @@ fn test_statements() {
     let prog = parse(
         r#"BEGIN {
         $x = 2;
-        $y  = 3;
+        $y = 3;
+        $y += 6;
+        $x -= 0;
     }"#,
     );
     let probe = &prog.probes[0];
-    assert_eq!(probe.block.statements.len(), 2);
+    assert_eq!(probe.block.statements.len(), 4);
     assert!(matches!(
         probe.block.statements[0],
         Statement::Assignment(_)
     ));
+}
+
+#[test]
+fn test_calls() {
+    let prog = parse(
+        r#"BEGIN {
+        $x = 1;
+        func();
+        func(1);
+        func(1, 2);
+        func( 1, 2, $x );
+    }"#,
+    );
+    let probe = &prog.probes[0];
+    assert_eq!(probe.block.statements.len(), 5);
+    assert!(matches!(probe.block.statements[1], Statement::Call(_)));
 }

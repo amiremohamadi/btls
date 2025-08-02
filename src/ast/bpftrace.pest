@@ -9,25 +9,28 @@ probe = { attach_point ~ WHITESPACE* ~ block }
 keyword_probe = { ("BEGIN" | "END") }
 block = { "{" ~ (WHITESPACE | comment | statement | error)* ~ "}" }
 
-statement = { assignment
-            | printf_stmt }
+statement = { assignment | call }
 
 assign_op = { "=" | "+=" | "-=" }
 assignment = { "$" ~ identifier ~
                WHITESPACE* ~ assign_op ~
                WHITESPACE* ~ expr ~
-               WHITESPACE* ~ ";"}
+               WHITESPACE* ~ ";" }
 
-printf_stmt = { "printf" ~ "(" ~ (!")" ~ ANY)* ~ ")" }
+call = { identifier ~
+          WHITESPACE* ~ "(" ~
+          WHITESPACE* ~
+          expr_list ~
+          WHITESPACE* ~ ")" ~
+          WHITESPACE* ~ ";" }
 
 expr = { string
        | number
        | identifier }
+expr_list = { (expr ~ ("," ~ expr)*)? }
 
 string = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
-
 number = @{ ASCII_DIGIT+ }
-
 operator = _{ "+" | "-" | "*" | "/" }
 
 program = ${ SOI ~ (WHITESPACE | comment | probe)* ~ EOI }

@@ -181,6 +181,25 @@ impl<'a> Node<'a> for Expr<'a> {
 }
 
 #[derive(Debug)]
+pub struct Call<'a> {
+    pub func: Identifier<'a>,
+    pub args: Vec<Expr<'a>>,
+    pub span: Span<'a>,
+}
+
+impl<'a> Node<'a> for Call<'a> {
+    fn as_node(&self) -> &dyn Node<'a> {
+        self
+    }
+
+    fn children(&self) -> Vec<&dyn Node<'a>> {
+        let mut children: Vec<&dyn Node> = vec![&self.func];
+        children.extend(self.args.iter().map(|x| x.as_node()));
+        children
+    }
+}
+
+#[derive(Debug)]
 pub enum AssignOp {
     Assign,
     AddAssign,
@@ -208,6 +227,7 @@ impl<'a> Node<'a> for Assignment<'a> {
 pub enum Statement<'a> {
     Error(Box<ErrorStatement<'a>>),
     Assignment(Box<Assignment<'a>>),
+    Call(Box<Call<'a>>),
 }
 
 impl<'a> Node<'a> for Statement<'a> {
@@ -219,6 +239,7 @@ impl<'a> Node<'a> for Statement<'a> {
         match self {
             Self::Error(e) => vec![e.as_node()],
             Self::Assignment(assign) => vec![assign.as_node()],
+            Self::Call(c) => vec![c.as_node()],
         }
     }
 }
