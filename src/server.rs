@@ -48,8 +48,10 @@ impl LanguageServer for Backend {
     }
 
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
-        let mut analyzer = self.context.analyzer.lock().await;
-        analyzer.analyze(params.text_document.uri.path());
+        // let mut analyzer = self.context.analyzer.lock().await;
+        super::diagnostic_provider::publish_diagnostics(&self.context, params.text_document.uri)
+            .await;
+        // analyzer.analyze(params.text_document.uri.path());
     }
 
     async fn shutdown(&self) -> Result<()> {

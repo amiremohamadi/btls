@@ -25,7 +25,10 @@ pub static ATTACH_POINTS: &[&str] = &[
 
 pub trait Node<'a> {
     fn as_node(&self) -> &dyn Node<'a>;
+
     fn children(&self) -> Vec<&dyn Node<'a>>;
+
+    fn span(&self) -> Span<'a>;
 
     fn as_error<'b>(&'b self) -> Option<ErrorRef<'a, 'b>> {
         None
@@ -82,6 +85,12 @@ pub struct UnknownStatement<'a> {
     pub span: Span<'a>,
 }
 
+impl<'a> UnknownStatement<'a> {
+    pub fn diagnosis(&self) -> &'static str {
+        "Unknown statement"
+    }
+}
+
 impl<'a> Node<'a> for UnknownStatement<'a> {
     fn as_node(&self) -> &dyn Node<'a> {
         self
@@ -90,11 +99,23 @@ impl<'a> Node<'a> for UnknownStatement<'a> {
     fn children(&self) -> Vec<&dyn Node<'a>> {
         Vec::new()
     }
+
+    fn span(&self) -> Span<'a> {
+        self.span
+    }
 }
 
 #[derive(Debug)]
 pub enum ErrorStatement<'a> {
     UnknownStatement(Box<UnknownStatement<'a>>),
+}
+
+impl<'a> ErrorStatement<'a> {
+    pub fn diagnosis(&self) -> &'static str {
+        match self {
+            Self::UnknownStatement(stmt) => stmt.diagnosis(),
+        }
+    }
 }
 
 impl<'a> Node<'a> for ErrorStatement<'a> {
@@ -105,6 +126,12 @@ impl<'a> Node<'a> for ErrorStatement<'a> {
     fn children(&self) -> Vec<&dyn Node<'a>> {
         match self {
             Self::UnknownStatement(stmt) => vec![stmt.as_node()],
+        }
+    }
+
+    fn span(&self) -> Span<'a> {
+        match self {
+            Self::UnknownStatement(stmt) => stmt.span(),
         }
     }
 
@@ -127,6 +154,10 @@ impl<'a> Node<'a> for Identifier<'a> {
     fn children(&self) -> Vec<&dyn Node<'a>> {
         Vec::new()
     }
+
+    fn span(&self) -> Span<'a> {
+        self.span
+    }
 }
 
 #[derive(Debug)]
@@ -143,6 +174,10 @@ impl<'a> Node<'a> for StringLiteral<'a> {
     fn children(&self) -> Vec<&dyn Node<'a>> {
         Vec::new()
     }
+
+    fn span(&self) -> Span<'a> {
+        self.span
+    }
 }
 
 #[derive(Debug)]
@@ -158,6 +193,10 @@ impl<'a> Node<'a> for IntegerLiteral<'a> {
 
     fn children(&self) -> Vec<&dyn Node<'a>> {
         Vec::new()
+    }
+
+    fn span(&self) -> Span<'a> {
+        self.span
     }
 }
 
@@ -176,6 +215,12 @@ impl<'a> Node<'a> for Lvalue<'a> {
             Self::Identifier(ident) => vec![ident.as_node()],
         }
     }
+
+    fn span(&self) -> Span<'a> {
+        match self {
+            Self::Identifier(ident) => ident.span(),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -192,6 +237,10 @@ impl<'a> Node<'a> for BinaryExpr<'a> {
 
     fn children(&self) -> Vec<&dyn Node<'a>> {
         vec![&*self.lhs, &*self.rhs]
+    }
+
+    fn span(&self) -> Span<'a> {
+        self.span
     }
 }
 
@@ -216,6 +265,15 @@ impl<'a> Node<'a> for Expr<'a> {
             Self::BinaryExpr(expr) => vec![expr.as_node()],
         }
     }
+
+    fn span(&self) -> Span<'a> {
+        match self {
+            Self::Integer(n) => n.span(),
+            Self::String(s) => s.span(),
+            Self::Identifier(ident) => ident.span(),
+            Self::BinaryExpr(expr) => expr.span(),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -234,6 +292,10 @@ impl<'a> Node<'a> for Call<'a> {
         let mut children: Vec<&dyn Node> = vec![&self.func];
         children.extend(self.args.iter().map(|x| x.as_node()));
         children
+    }
+
+    fn span(&self) -> Span<'a> {
+        self.span
     }
 }
 
@@ -259,6 +321,10 @@ impl<'a> Node<'a> for Assignment<'a> {
     fn children(&self) -> Vec<&dyn Node<'a>> {
         vec![&self.lvalue, &*self.rvalue]
     }
+
+    fn span(&self) -> Span<'a> {
+        self.span
+    }
 }
 
 #[derive(Debug)]
@@ -280,12 +346,26 @@ impl<'a> Node<'a> for Statement<'a> {
             Self::Call(c) => vec![c.as_node()],
         }
     }
+
+    fn span(&self) -> Span<'a> {
+        match self {
+            Self::Error(e) => e.span(),
+            Self::Assignment(assign) => assign.span(),
+            Self::Call(c) => c.span(),
+        }
+    }
 }
 
 #[derive(Debug)]
 pub struct UnknownPreamble<'a> {
     pub text: &'a str,
     pub span: Span<'a>,
+}
+
+impl<'a> UnknownPreamble<'a> {
+    pub fn diagnosis(&self) -> &'static str {
+        "Unknown preamble"
+    }
 }
 
 impl<'a> Node<'a> for UnknownPreamble<'a> {
@@ -296,11 +376,23 @@ impl<'a> Node<'a> for UnknownPreamble<'a> {
     fn children(&self) -> Vec<&dyn Node<'a>> {
         Vec::new()
     }
+
+    fn span(&self) -> Span<'a> {
+        self.span
+    }
 }
 
 #[derive(Debug)]
 pub enum ErrorPreamble<'a> {
     UnknownPreamble(Box<UnknownPreamble<'a>>),
+}
+
+impl<'a> ErrorPreamble<'a> {
+    pub fn diagnosis(&self) -> &'static str {
+        match self {
+            Self::UnknownPreamble(pream) => pream.diagnosis(),
+        }
+    }
 }
 
 impl<'a> Node<'a> for ErrorPreamble<'a> {
@@ -311,6 +403,12 @@ impl<'a> Node<'a> for ErrorPreamble<'a> {
     fn children(&self) -> Vec<&dyn Node<'a>> {
         match self {
             Self::UnknownPreamble(p) => vec![p.as_node()],
+        }
+    }
+
+    fn span(&self) -> Span<'a> {
+        match self {
+            Self::UnknownPreamble(p) => p.span(),
         }
     }
 
@@ -336,6 +434,13 @@ impl<'a> Node<'a> for Preamble<'a> {
             Self::Error(e) => vec![e.as_node()],
         }
     }
+
+    fn span(&self) -> Span<'a> {
+        match self {
+            Self::Probe(p) => p.span(),
+            Self::Error(e) => e.span(),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -354,6 +459,10 @@ impl<'a> Node<'a> for Probe<'a> {
     fn children(&self) -> Vec<&dyn Node<'a>> {
         self.block.children()
     }
+
+    fn span(&self) -> Span<'a> {
+        self.span
+    }
 }
 
 #[derive(Debug)]
@@ -371,6 +480,10 @@ impl<'a> Node<'a> for Program<'a> {
     fn children(&self) -> Vec<&dyn Node<'a>> {
         self.preambles.iter().map(|p| p.as_node()).collect()
     }
+
+    fn span(&self) -> Span<'a> {
+        self.span
+    }
 }
 
 #[derive(Debug)]
@@ -383,6 +496,15 @@ pub struct Block<'a> {
 pub enum ErrorRef<'a, 'b> {
     Statement(&'b ErrorStatement<'a>),
     Preamble(&'b ErrorPreamble<'a>),
+}
+
+impl<'a, 'b> ErrorRef<'a, 'b> {
+    pub fn diagnosis(&self) -> &'static str {
+        match self {
+            Self::Statement(stmt) => stmt.diagnosis(),
+            Self::Preamble(pream) => pream.diagnosis(),
+        }
+    }
 }
 
 impl<'a, 'b> Node<'a> for ErrorRef<'a, 'b> {
@@ -399,6 +521,13 @@ impl<'a, 'b> Node<'a> for ErrorRef<'a, 'b> {
             Self::Preamble(pream) => pream.children(),
         }
     }
+
+    fn span(&self) -> Span<'a> {
+        match self {
+            Self::Statement(stmt) => stmt.span(),
+            Self::Preamble(pream) => pream.span(),
+        }
+    }
 }
 
 impl<'a> Node<'a> for Block<'a> {
@@ -408,5 +537,9 @@ impl<'a> Node<'a> for Block<'a> {
 
     fn children(&self) -> Vec<&dyn Node<'a>> {
         self.statements.iter().map(|s| s.as_node()).collect()
+    }
+
+    fn span(&self) -> Span<'a> {
+        self.span
     }
 }

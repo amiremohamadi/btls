@@ -1,4 +1,5 @@
 use super::builtins::BUILTINS;
+use super::server::Context;
 use tower_lsp::jsonrpc::Result;
 use tower_lsp::lsp_types::{
     CompletionItem, CompletionItemKind, CompletionParams, CompletionResponse, Documentation,
@@ -21,15 +22,16 @@ macro_rules! builtin_to_completion_item {
 }
 
 pub async fn completion(
-    context: &super::server::Context,
+    context: &Context,
     _: CompletionParams,
 ) -> Result<Option<CompletionResponse>> {
     let analyzer = context.analyzer.lock().await;
-    let variables: Vec<_> = analyzer
-        .variables
-        .iter()
-        .map(|x| CompletionItem::new_simple(x.to_string(), "".to_string()))
-        .collect();
+    let variables = Vec::new();
+    // let variables: Vec<_> = analyzer
+    //     .variables
+    //     .iter()
+    //     .map(|x| CompletionItem::new_simple(x.to_string(), "".to_string()))
+    //     .collect();
 
     let builtin_keywords =
         builtin_to_completion_item!(BUILTINS.keywords, CompletionItemKind::KEYWORD);
