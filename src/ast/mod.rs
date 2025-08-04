@@ -1,4 +1,5 @@
 mod parser;
+pub mod semantic_analyzer;
 mod tests;
 
 use pest::Span;

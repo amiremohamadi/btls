@@ -52,8 +52,22 @@ def generate_builtins():
     with open('./target/builtins.gen.rs', 'w') as target:
         print('// DO NOT EDIT -- this file is auto generated\n',
               file=target)
+        print('BuiltinSymbols {', file=target)
+        print('\tkeywords: &[', file=target)
+
         for var in builtin_vars:
-            print(var)
+            # no need to show the details in case of not having any
+            var['type'] = '' if var['type'] == 'n/a' else var['type']
+            var['description'] = '' if var['description'] == 'n/a' else var['description']
+
+            print('\t\tBuiltinSymbol {', file=target)
+            print('\t\t\tname: "{}",'.format(var['name']), file=target)
+            print('\t\t\tdetail: "{}",'.format(var['type']), file=target)
+            print('\t\t\tdocumentation: "{}",'.format(var['description']), file=target)
+            print('\t\t},', file=target)
+
+        print('\t],', file=target)
+        print('}', file=target)
 
 
 def main():

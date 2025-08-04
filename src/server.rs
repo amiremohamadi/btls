@@ -1,9 +1,11 @@
+use super::ast::semantic_analyzer::SemanticAnalyzer;
+use tokio::sync::Mutex;
 use tower_lsp::{
     Client, LanguageServer, LspService, Server,
     jsonrpc::Result,
     lsp_types::{
-        CompletionItem, CompletionOptions, CompletionParams, CompletionResponse, InitializeParams,
-        InitializeResult, InitializedParams, MessageType, ServerCapabilities,
+        CompletionOptions, CompletionParams, CompletionResponse, DidOpenTextDocumentParams,
+        InitializeParams, InitializeResult, InitializedParams, MessageType, ServerCapabilities,
     },
 };
 
@@ -11,8 +13,9 @@ struct Backend {
     context: Context,
 }
 
-struct Context {
-    client: Client,
+pub struct Context {
+    pub client: Client,
+    pub analyzer: Mutex<SemanticAnalyzer>,
 }
 
 #[tower_lsp::async_trait]
@@ -21,6 +24,9 @@ impl LanguageServer for Backend {
         Ok(InitializeResult {
             capabilities: ServerCapabilities {
                 completion_provider: Some(CompletionOptions::default()),
+                text_document_sync: Some(tower_lsp::lsp_types::TextDocumentSyncCapability::Kind(
+                    tower_lsp::lsp_types::TextDocumentSyncKind::FULL,
+                )),
                 ..Default::default()
             },
             ..Default::default()
@@ -37,12 +43,13 @@ impl LanguageServer for Backend {
             .await;
     }
 
-    async fn completion(&self, _: CompletionParams) -> Result<Option<CompletionResponse>> {
-        let items = vec![CompletionItem::new_simple(
-            "BEGIN".to_string(),
-            "BEGIN probe".to_string(),
-        )];
-        Ok(Some(CompletionResponse::Array(items)))
+    async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
+        super::completion_provider::completion(&self.context, params).await
+    }
+
+    async fn did_open(&self, params: DidOpenTextDocumentParams) {
+        let mut analyzer = self.context.analyzer.lock().await;
+        analyzer.analyze(params.text_document.uri.path());
     }
 
     async fn shutdown(&self) -> Result<()> {
@@ -51,8 +58,12 @@ impl LanguageServer for Backend {
 }
 
 pub async fn run() {
+    let analyzer = SemanticAnalyzer::new();
     let (service, socket) = LspService::new(move |client| {
-        let context = Context { client };
+        let context = Context {
+            client,
+            analyzer: tokio::sync::Mutex::new(analyzer),
+        };
         Backend { context }
     });
 
