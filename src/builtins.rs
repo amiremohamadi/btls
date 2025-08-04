@@ -1,5 +1,6 @@
 pub struct BuiltinSymbols {
     pub keywords: &'static [BuiltinSymbol],
+    pub functions: &'static [BuiltinSymbol],
 }
 
 pub struct BuiltinSymbol {

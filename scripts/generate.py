@@ -1,4 +1,5 @@
 import os
+import re
 import subprocess
 
 import mistune
@@ -42,31 +43,52 @@ def _parse_vars_table(ast):
     return res
 
 
+def _parse_functions_docs(content):
+    pattern = re.compile(r'(?s)(?:^|\n)###\s+(.+?)\n(.*?)(?=\n#### |\n### |\n## |\n# |\Z)',
+                         re.MULTILINE | re.DOTALL)
+    matches = pattern.findall(content)
+    result = []
+    for heading, content in matches:
+        result.append({'name': heading, 'description': content.strip()})
+    return result
+
+
+def export_symbol(var, target):
+    # no need to show the details in case of not having any
+    if var['description'] == 'n/a':
+        var['description'] = ''
+    if (not var.get('type')) or var['type'] == 'n/a':
+        var['type'] = ''
+
+    print('\t\tBuiltinSymbol {', file=target)
+    print('\t\t\tname: "{}",'.format(var['name']), file=target)
+    print('\t\t\tdetail: "{}",'.format(var['type']), file=target)
+    print('\t\t\tdocumentation: r#"{}"#,'.format(var['description']), file=target)
+    print('\t\t},', file=target)
+
+
+def export_symbols(field, symbols, target):
+    print('\t{}: &['.format(field), file=target)
+    for sym in symbols:
+        export_symbol(sym, target)
+    print('\t],', file=target)
+
+
 def generate_builtins():
     with open('./stdlib.md', 'r') as f:
+        content = f.read()
         markdown = mistune.create_markdown(renderer=mistune.AstRenderer(),
                                            plugins=[plugin_table])
-        ast = markdown(f.read())
+        ast = markdown(content)
         builtin_vars = _parse_vars_table(ast)
+        builtin_funcs = _parse_functions_docs(content)
 
     with open('./target/builtins.gen.rs', 'w') as target:
         print('// DO NOT EDIT -- this file is auto generated\n',
               file=target)
         print('BuiltinSymbols {', file=target)
-        print('\tkeywords: &[', file=target)
-
-        for var in builtin_vars:
-            # no need to show the details in case of not having any
-            var['type'] = '' if var['type'] == 'n/a' else var['type']
-            var['description'] = '' if var['description'] == 'n/a' else var['description']
-
-            print('\t\tBuiltinSymbol {', file=target)
-            print('\t\t\tname: "{}",'.format(var['name']), file=target)
-            print('\t\t\tdetail: "{}",'.format(var['type']), file=target)
-            print('\t\t\tdocumentation: "{}",'.format(var['description']), file=target)
-            print('\t\t},', file=target)
-
-        print('\t],', file=target)
+        export_symbols('keywords', builtin_vars, target)
+        export_symbols('functions', builtin_funcs, target)
         print('}', file=target)
 
 
