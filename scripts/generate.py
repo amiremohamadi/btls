@@ -76,7 +76,7 @@ def export_symbols(field, symbols, target):
 
 def generate_builtins():
     with open('./stdlib.md', 'r') as f:
-        content = f.read()
+        content = _get_bpftrace_stdlib_docs()
         markdown = mistune.create_markdown(renderer=mistune.AstRenderer(),
                                            plugins=[plugin_table])
         ast = markdown(content)
@@ -93,9 +93,15 @@ def generate_builtins():
 
 
 def main():
-    # os.chdir(os.path.dirname(os.path.dirname(__file__)))
-    # print(_get_bpftrace_stdlib_docs())
-    generate_builtins()
+    root = os.path.dirname(os.path.dirname(__file__))
+    target_path = f'{root}/target/builtins.gen.rs'
+    if not os.path.exists(target_path):
+        print('generating...')
+        generate_builtins()
+        print(f'generated "{target_path}"')
+    else:
+        print('builtins already exists!')
+        print(f'remove "{target_path}" if you want to re-generate.')
 
 
 if __name__ == '__main__':
