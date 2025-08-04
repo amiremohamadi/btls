@@ -19,14 +19,24 @@ fn test_sanity() {
     parse_no_errors("tracepoint:sched:* { $x  = 1   ; }");
     parse_no_errors("END, BEGIN { $x  = 1   ; }");
     parse_no_errors("END, BEGIN / 1 / {}");
+
+    // should fail
+    // variable outside probe
+    let prog = parse("$x = 1");
+    assert!(
+        prog.errors().collect::<Vec<_>>().len() > 0,
+        "parsed without any errors!"
+    );
 }
 
 #[test]
 fn test_probe() {
     let prog = parse("tracepoint:sched:* {}");
-    assert_eq!(prog.probes.len(), 1);
+    assert_eq!(prog.preambles.len(), 1);
 
-    let probe = &prog.probes[0];
+    let Preamble::Probe(probe) = &prog.preambles[0] else {
+        panic!("not a probe!");
+    };
     assert_eq!(probe.attach_points[0], "tracepoint:sched:*");
     assert_eq!(probe.block.statements.len(), 0);
 }
@@ -42,7 +52,9 @@ fn test_statements() {
         $str = "string";
     }"#,
     );
-    let probe = &prog.probes[0];
+    let Preamble::Probe(probe) = &prog.preambles[0] else {
+        panic!("not a probe");
+    };
     assert_eq!(probe.block.statements.len(), 5);
     assert!(matches!(
         probe.block.statements[0],
@@ -62,7 +74,9 @@ fn test_calls() {
         $z = func(69);
     }"#,
     );
-    let probe = &prog.probes[0];
+    let Preamble::Probe(probe) = &prog.preambles[0] else {
+        panic!("not a probe");
+    };
     assert_eq!(probe.block.statements.len(), 6);
     assert!(matches!(probe.block.statements[1], Statement::Call(_)));
 }

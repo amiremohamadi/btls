@@ -2,8 +2,9 @@ use itertools::Itertools;
 use pest::{Parser, iterators::Pair};
 
 use super::{
-    AssignOp, Assignment, Block, Call, ErrorStatement, Expr, Identifier, IntegerLiteral, Lvalue,
-    Probe, Program, Statement, StringLiteral, UnknownStatement,
+    AssignOp, Assignment, Block, Call, ErrorPreamble, ErrorStatement, Expr, Identifier,
+    IntegerLiteral, Lvalue, Preamble, Probe, Program, Statement, StringLiteral, UnknownPreamble,
+    UnknownStatement,
 };
 
 #[derive(pest_derive::Parser)]
@@ -185,18 +186,32 @@ fn convert_probe(pair: Pair<Rule>) -> Probe {
     }
 }
 
+fn convert_preamble(pair: Pair<Rule>) -> Preamble {
+    assert!(matches!(pair.as_rule(), Rule::preamble));
+    let pair = pair.into_inner().exactly_one().unwrap();
+    match pair.as_rule() {
+        Rule::probe => Preamble::Probe(convert_probe(pair)),
+        _ => unreachable!(),
+    }
+}
+
 fn convert_prog(pair: Pair<Rule>) -> Program {
     assert!(matches!(pair.as_rule(), Rule::program));
     let span = pair.as_span();
-    let probes = pair
+    let preambles = pair
         .into_inner()
         .filter_map(|pair| match pair.as_rule() {
-            Rule::probe => Some(convert_probe(pair)),
-            Rule::comment => None,
+            Rule::preamble => Some(convert_preamble(pair)),
+            Rule::error => Some(Preamble::Error(Box::new(ErrorPreamble::UnknownPreamble(
+                Box::new(UnknownPreamble {
+                    text: pair.as_str(),
+                    span: pair.as_span(),
+                }),
+            )))),
             _ => None,
         })
         .collect();
-    Program { probes, span }
+    Program { preambles, span }
 }
 
 pub fn parse(input: &str) -> Program {

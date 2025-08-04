@@ -283,6 +283,62 @@ impl<'a> Node<'a> for Statement<'a> {
 }
 
 #[derive(Debug)]
+pub struct UnknownPreamble<'a> {
+    pub text: &'a str,
+    pub span: Span<'a>,
+}
+
+impl<'a> Node<'a> for UnknownPreamble<'a> {
+    fn as_node(&self) -> &dyn Node<'a> {
+        self
+    }
+
+    fn children(&self) -> Vec<&dyn Node<'a>> {
+        Vec::new()
+    }
+}
+
+#[derive(Debug)]
+pub enum ErrorPreamble<'a> {
+    UnknownPreamble(Box<UnknownPreamble<'a>>),
+}
+
+impl<'a> Node<'a> for ErrorPreamble<'a> {
+    fn as_node(&self) -> &dyn Node<'a> {
+        self
+    }
+
+    fn children(&self) -> Vec<&dyn Node<'a>> {
+        match self {
+            Self::UnknownPreamble(p) => vec![p.as_node()],
+        }
+    }
+
+    fn as_error<'b>(&'b self) -> Option<ErrorRef<'a, 'b>> {
+        Some(ErrorRef::Preamble(self))
+    }
+}
+
+#[derive(Debug)]
+pub enum Preamble<'a> {
+    Probe(Probe<'a>),
+    Error(Box<ErrorPreamble<'a>>),
+}
+
+impl<'a> Node<'a> for Preamble<'a> {
+    fn as_node(&self) -> &dyn Node<'a> {
+        self
+    }
+
+    fn children(&self) -> Vec<&dyn Node<'a>> {
+        match self {
+            Self::Probe(p) => p.children(),
+            Self::Error(e) => vec![e.as_node()],
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct Probe<'a> {
     pub attach_points: Vec<&'a str>,
     pub condition: Option<Expr<'a>>,
@@ -302,7 +358,8 @@ impl<'a> Node<'a> for Probe<'a> {
 
 #[derive(Debug)]
 pub struct Program<'a> {
-    pub probes: Vec<Probe<'a>>,
+    pub preambles: Vec<Preamble<'a>>,
+    // pub probes: Vec<Probe<'a>>,
     pub span: Span<'a>,
 }
 
@@ -312,7 +369,7 @@ impl<'a> Node<'a> for Program<'a> {
     }
 
     fn children(&self) -> Vec<&dyn Node<'a>> {
-        self.probes.iter().map(|p| p.as_node()).collect()
+        self.preambles.iter().map(|p| p.as_node()).collect()
     }
 }
 
@@ -325,18 +382,21 @@ pub struct Block<'a> {
 #[derive(Clone, Copy, Debug)]
 pub enum ErrorRef<'a, 'b> {
     Statement(&'b ErrorStatement<'a>),
+    Preamble(&'b ErrorPreamble<'a>),
 }
 
 impl<'a, 'b> Node<'a> for ErrorRef<'a, 'b> {
     fn as_node(&self) -> &'b dyn Node<'a> {
         match self {
             Self::Statement(stmt) => stmt.as_node(),
+            Self::Preamble(pream) => pream.as_node(),
         }
     }
 
     fn children(&self) -> Vec<&'b dyn Node<'a>> {
         match self {
             Self::Statement(stmt) => stmt.children(),
+            Self::Preamble(pream) => pream.children(),
         }
     }
 }

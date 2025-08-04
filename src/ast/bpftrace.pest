@@ -9,6 +9,8 @@ probe_condition = { "/" ~ WHITESPACE* ~ expr ~ WHITESPACE* ~ "/" }
 probe = { attach_point_list ~ WHITESPACE* ~ probe_condition? ~ WHITESPACE* ~ block }
 block = { "{" ~ (WHITESPACE | comment | statement | error)* ~ "}" }
 
+preamble = { probe }
+
 statement = { assignment | call }
 
 assign_op = { "=" | "+=" | "-=" }
@@ -28,8 +30,8 @@ string = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
 number = @{ ASCII_DIGIT+ }
 operator = _{ "+" | "-" | "*" | "/" }
 
-program = ${ SOI ~ (WHITESPACE | comment | probe)* ~ EOI }
 error = { rest_of_line }
+program = ${ SOI ~ (WHITESPACE | comment | preamble | error)* ~ EOI }
 
 comment = ${ "//" ~ " "? ~ (!NEWLINE ~ ANY)* ~ NEWLINE? }
 rest_of_line = @{ (!(NEWLINE | "}") ~ ANY)+ ~ NEWLINE? }
