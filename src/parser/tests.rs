@@ -20,6 +20,7 @@ fn test_sanity() {
     parse_no_errors("tracepoint:sched:* { $x  = 1   ; }");
     parse_no_errors("END, BEGIN { $x  = 1   ; }");
     parse_no_errors("END, BEGIN / 1 / {}");
+    parse_no_errors("BEING { $x = 1 + 2 - 3 * 4; }");
 
     // should fail
     // variable outside probe
@@ -35,7 +36,6 @@ fn test_probe() {
     let prog = parse("tracepoint:sched:* { }");
     assert_eq!(prog.preambles.len(), 1);
 
-    println!("PREAM {:?}", &prog.preambles[0]);
     let Preamble::Probe(probe) = &prog.preambles[0] else {
         panic!("not a probe!");
     };

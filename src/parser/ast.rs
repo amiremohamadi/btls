@@ -1,10 +1,14 @@
 use itertools::Itertools;
-use pest::{Parser, iterators::Pair};
+use pest::{
+    Parser, Span,
+    iterators::Pair,
+    pratt_parser::{Assoc, Op, PrattParser},
+};
 
 use super::{
-    AssignOp, Assignment, Block, Call, ErrorPreamble, ErrorStatement, Expr, Identifier,
-    IntegerLiteral, Lvalue, Preamble, Probe, Program, Statement, StringLiteral, UnknownPreamble,
-    UnknownStatement,
+    AssignOp, Assignment, BinaryExpr, Block, Call, ErrorPreamble, ErrorStatement, Expr, Identifier,
+    IntegerLiteral, Lvalue, Node, Preamble, Probe, Program, Statement, StringLiteral,
+    UnknownPreamble, UnknownStatement,
 };
 
 #[derive(pest_derive::Parser)]
@@ -74,11 +78,33 @@ fn convert_primary_expr(pair: Pair<Rule>) -> Expr {
 
 fn convert_expr(pair: Pair<Rule>) -> Expr {
     assert!(matches!(pair.as_rule(), Rule::expr));
-    let pair = pair.into_inner().exactly_one().unwrap();
-    match pair.as_rule() {
-        Rule::primary => convert_primary_expr(pair),
-        _ => unreachable!(),
-    }
+    let pairs = pair.into_inner();
+
+    let parser = PrattParser::new()
+        .op(Op::infix(Rule::add, Assoc::Left)
+            | Op::infix(Rule::sub, Assoc::Left)
+            | Op::infix(Rule::mul, Assoc::Left)
+            | Op::infix(Rule::div, Assoc::Left))
+        .op(Op::infix(Rule::ge, Assoc::Left)
+            | Op::infix(Rule::gt, Assoc::Left)
+            | Op::infix(Rule::le, Assoc::Left)
+            | Op::infix(Rule::lt, Assoc::Left)
+            | Op::infix(Rule::eq, Assoc::Left)
+            | Op::infix(Rule::ne, Assoc::Left))
+        .op(Op::infix(Rule::and, Assoc::Left) | Op::infix(Rule::or, Assoc::Left));
+
+    parser
+        .map_primary(|p| convert_primary_expr(p))
+        .map_infix(|lhs, op, rhs| {
+            let span =
+                Span::new(lhs.span().get_input(), lhs.span().start(), rhs.span().end()).unwrap();
+            Expr::BinaryExpr(Box::new(BinaryExpr {
+                lhs: Box::new(lhs),
+                rhs: Box::new(rhs),
+                span,
+            }))
+        })
+        .parse(pairs)
 }
 
 fn convert_lvalue(pair: Pair<Rule>) -> Lvalue {

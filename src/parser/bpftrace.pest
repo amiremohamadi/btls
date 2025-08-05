@@ -6,10 +6,22 @@ identifier = @{ (ASCII_ALPHANUMERIC | "_")+ }
 string     = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
 number     = @{ ASCII_DIGIT+ }
 
-primary   = { string | number | identifier }
-infix     = { "+" | "-" | "*" | "^" | "<" | ">" | "<=" | ">=" | "==" | "!=" | "&&" | "||" }
-expr      = { primary ~ (infix ~ primary)* }
-expr_list = { (expr ~ ("," ~ expr)*)? }
+primary   =  { string | number | identifier }
+expr_list =  { (expr ~ ("," ~ expr)*)? }
+expr      =  { primary ~ (infix ~ primary)* }
+infix     = _{ add | sub | mul | div | le | lt | ge | gt | eq | ne | and | or }
+add       =  { "+" }
+sub       =  { "-" }
+mul       =  { "*" }
+div       =  { "/" }
+le        =  { "<=" }
+lt        =  { "<" }
+ge        =  { ">=" }
+gt        =  { ">" }
+eq        =  { "==" }
+ne        =  { "!=" }
+and       =  { "&&" }
+or        =  { "||" }
 
 assign_op  = { "=" | "+=" | "-=" }
 assignment = { "$" ~ identifier ~ assign_op ~ expr ~ ";" }
@@ -23,7 +35,7 @@ probe_condition   = { "/" ~ expr ~ "/" }
 probe             = { attach_point_list ~ probe_condition? ~ block }
 preamble          = { probe }
 
-error        = { rest_of_line }
+error        =  { rest_of_line }
 rest_of_line = @{ (!(NEWLINE | "}") ~ ANY)+ ~ NEWLINE? }
 
 program = { SOI ~ (COMMENT | preamble | error)* ~ EOI }
