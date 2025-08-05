@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use super::ast::parse;
 use super::*;
 
 fn parse_no_errors(input: &str) {
@@ -31,9 +32,10 @@ fn test_sanity() {
 
 #[test]
 fn test_probe() {
-    let prog = parse("tracepoint:sched:* {}");
+    let prog = parse("tracepoint:sched:* { }");
     assert_eq!(prog.preambles.len(), 1);
 
+    println!("PREAM {:?}", &prog.preambles[0]);
     let Preamble::Probe(probe) = &prog.preambles[0] else {
         panic!("not a probe!");
     };
@@ -53,7 +55,7 @@ fn test_statements() {
     }"#,
     );
     let Preamble::Probe(probe) = &prog.preambles[0] else {
-        panic!("not a probe");
+        panic!("not a probe!");
     };
     assert_eq!(probe.block.statements.len(), 5);
     assert!(matches!(
@@ -75,7 +77,7 @@ fn test_calls() {
     }"#,
     );
     let Preamble::Probe(probe) = &prog.preambles[0] else {
-        panic!("not a probe");
+        panic!("not a probe!");
     };
     assert_eq!(probe.block.statements.len(), 6);
     assert!(matches!(probe.block.statements[1], Statement::Call(_)));

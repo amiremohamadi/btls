@@ -19,7 +19,7 @@ impl SemanticAnalyzer {
 
     pub fn analyze(&mut self, path: &str) -> AnalyzedFile {
         self.content = std::fs::read_to_string(path).unwrap();
-        let ast = super::parser::parse(&self.content);
+        let ast = super::ast::parse(&self.content);
         let variables = ast
             .preambles
             .iter()
@@ -40,25 +40,4 @@ impl SemanticAnalyzer {
             .collect();
         AnalyzedFile { ast, variables }
     }
-
-    // pub fn analyze(&mut self, path: &str) {
-    //     let data = std::fs::read_to_string(path).unwrap();
-    //     let ast = super::parser::parse(&data);
-    //     ast.preambles
-    //         .iter()
-    //         .filter_map(|p| match p {
-    //             Preamble::Probe(p) => Some(p),
-    //             _ => None,
-    //         })
-    //         .flat_map(|p| &p.block.statements)
-    //         .filter_map(|s| match s {
-    //             Statement::Assignment(a) => Some(a),
-    //             _ => None,
-    //         })
-    //         .for_each(|x| match &x.lvalue {
-    //             Lvalue::Identifier(ident) => {
-    //                 self.insert(format!("${}", ident.name));
-    //             }
-    //         });
-    // }
 }

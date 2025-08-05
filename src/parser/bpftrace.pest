@@ -1,0 +1,29 @@
+WHITESPACE = _{ (" " | "\t" | "\r" | "\n")+ }
+COMMENT    = _{ "//" ~ (!NEWLINE ~ ANY)* ~ NEWLINE? }
+NEWLINE    = _{ "\r\n" | "\n" }
+
+identifier = @{ (ASCII_ALPHANUMERIC | "_")+ }
+string     = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
+number     = @{ ASCII_DIGIT+ }
+
+primary   = { string | number | identifier }
+infix     = { "+" | "-" | "*" | "^" | "<" | ">" | "<=" | ">=" | "==" | "!=" | "&&" | "||" }
+expr      = { primary ~ (infix ~ primary)* }
+expr_list = { (expr ~ ("," ~ expr)*)? }
+
+assign_op  = { "=" | "+=" | "-=" }
+assignment = { "$" ~ identifier ~ assign_op ~ expr ~ ";" }
+call       = { identifier ~ "(" ~ expr_list ~ ")" ~ ";" }
+statement  = { assignment | call }
+block      = { "{" ~ (COMMENT | statement | error)* ~ "}" }
+
+attach_point      = { (identifier | ":" | "*")+ }
+attach_point_list = { attach_point ~ ("," ~ attach_point)* }
+probe_condition   = { "/" ~ expr ~ "/" }
+probe             = { attach_point_list ~ probe_condition? ~ block }
+preamble          = { probe }
+
+error        = { rest_of_line }
+rest_of_line = @{ (!(NEWLINE | "}") ~ ANY)+ ~ NEWLINE? }
+
+program = { SOI ~ (COMMENT | preamble | error)* ~ EOI }

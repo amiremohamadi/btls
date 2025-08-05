@@ -1,4 +1,4 @@
-use super::ast::Node;
+use super::parser::Node;
 use super::server::Context;
 use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, Position, Range, Url};
 
@@ -23,7 +23,7 @@ pub async fn publish_diagnostics(context: &Context, uri: Url) {
                 to_position(&content, e.span().end()),
             ),
             severity: Some(DiagnosticSeverity::ERROR),
-            message: e.diagnosis().to_string(),
+            message: e.diagnosis(),
             ..Default::default()
         })
         .collect();

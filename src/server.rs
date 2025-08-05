@@ -1,4 +1,4 @@
-use super::ast::semantic_analyzer::SemanticAnalyzer;
+use super::parser::semantic_analyzer::SemanticAnalyzer;
 use tokio::sync::Mutex;
 use tower_lsp::{
     Client, LanguageServer, LspService, Server,

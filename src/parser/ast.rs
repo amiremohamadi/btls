@@ -8,7 +8,7 @@ use super::{
 };
 
 #[derive(pest_derive::Parser)]
-#[grammar = "ast/bpftrace.pest"]
+#[grammar = "parser/bpftrace.pest"]
 struct BPFTraceParser;
 
 fn convert_int(pair: Pair<Rule>) -> IntegerLiteral {
@@ -137,7 +137,6 @@ fn convert_block(pair: Pair<Rule>) -> Block {
                 })),
             ))),
             Rule::statement => Some(convert_statement(pair)),
-            Rule::comment => None,
             _ => None,
         })
         .collect();

@@ -1,33 +1,13 @@
-mod parser;
+mod ast;
 pub mod semantic_analyzer;
 mod tests;
 
 use pest::Span;
 use std::iter::FilterMap;
 
-pub use parser::*;
-
-pub static ATTACH_POINTS: &[&str] = &[
-    "BEGIN",
-    "END",
-    "tracepoint:",
-    "kprobe",
-    "kfunc",
-    "kretfunc",
-    "kretprobe",
-    "uprobe",
-    "uretprobe",
-    "iter",
-    "hardware",
-    "software:",
-    "rawtracepoint",
-];
-
 pub trait Node<'a> {
     fn as_node(&self) -> &dyn Node<'a>;
-
     fn children(&self) -> Vec<&dyn Node<'a>>;
-
     fn span(&self) -> Span<'a>;
 
     fn as_error<'b>(&'b self) -> Option<ErrorRef<'a, 'b>> {
@@ -86,8 +66,8 @@ pub struct UnknownStatement<'a> {
 }
 
 impl<'a> UnknownStatement<'a> {
-    pub fn diagnosis(&self) -> &'static str {
-        "Unknown statement"
+    pub fn diagnosis(&self) -> String {
+        format!("Unknown statement \"{}\"", self.text.trim())
     }
 }
 
@@ -111,7 +91,7 @@ pub enum ErrorStatement<'a> {
 }
 
 impl<'a> ErrorStatement<'a> {
-    pub fn diagnosis(&self) -> &'static str {
+    pub fn diagnosis(&self) -> String {
         match self {
             Self::UnknownStatement(stmt) => stmt.diagnosis(),
         }
@@ -363,8 +343,8 @@ pub struct UnknownPreamble<'a> {
 }
 
 impl<'a> UnknownPreamble<'a> {
-    pub fn diagnosis(&self) -> &'static str {
-        "Unknown preamble"
+    pub fn diagnosis(&self) -> String {
+        format!("Unknown preamble \"{}\"", self.text.trim())
     }
 }
 
@@ -388,7 +368,7 @@ pub enum ErrorPreamble<'a> {
 }
 
 impl<'a> ErrorPreamble<'a> {
-    pub fn diagnosis(&self) -> &'static str {
+    pub fn diagnosis(&self) -> String {
         match self {
             Self::UnknownPreamble(pream) => pream.diagnosis(),
         }
@@ -499,7 +479,7 @@ pub enum ErrorRef<'a, 'b> {
 }
 
 impl<'a, 'b> ErrorRef<'a, 'b> {
-    pub fn diagnosis(&self) -> &'static str {
+    pub fn diagnosis(&self) -> String {
         match self {
             Self::Statement(stmt) => stmt.diagnosis(),
             Self::Preamble(pream) => pream.diagnosis(),
