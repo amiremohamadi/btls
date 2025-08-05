@@ -23,15 +23,15 @@ macro_rules! builtin_to_completion_item {
 
 pub async fn completion(
     context: &Context,
-    _: CompletionParams,
+    params: CompletionParams,
 ) -> Result<Option<CompletionResponse>> {
-    let analyzer = context.analyzer.lock().await;
-    let variables = Vec::new();
-    // let variables: Vec<_> = analyzer
-    //     .variables
-    //     .iter()
-    //     .map(|x| CompletionItem::new_simple(x.to_string(), "".to_string()))
-    //     .collect();
+    let mut analyzer = context.analyzer.lock().await;
+    let analyzed_file = analyzer.analyze(params.text_document_position.text_document.uri.path());
+    let variables = analyzed_file.variables.iter().map(|x| CompletionItem {
+        label: x.to_string(),
+        kind: Some(CompletionItemKind::VARIABLE),
+        ..Default::default()
+    });
 
     let builtin_keywords =
         builtin_to_completion_item!(BUILTINS.keywords, CompletionItemKind::KEYWORD);
@@ -39,9 +39,9 @@ pub async fn completion(
         builtin_to_completion_item!(BUILTINS.functions, CompletionItemKind::FUNCTION);
 
     Ok(Some(CompletionResponse::Array(
-        builtin_keywords
+        variables
+            .chain(builtin_keywords)
             .chain(builtin_funcs)
-            .chain(variables)
             .collect(),
     )))
 }
