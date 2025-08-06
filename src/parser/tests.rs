@@ -20,7 +20,8 @@ fn test_sanity() {
     parse_no_errors("tracepoint:sched:* { $x  = 1   ; }");
     parse_no_errors("END, BEGIN { $x  = 1   ; }");
     parse_no_errors("END, BEGIN / 1 / {}");
-    parse_no_errors("BEING { $x = 1 + 2 - 3 * 4; }");
+    parse_no_errors("BEGIN { $x = 1 + 2 - 3 * 4; }");
+    parse_no_errors("BEGIN { if ($x == 1) {} }");
 
     // should fail
     // variable outside probe

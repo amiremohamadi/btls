@@ -308,10 +308,32 @@ impl<'a> Node<'a> for Assignment<'a> {
 }
 
 #[derive(Debug)]
+pub struct If<'a> {
+    pub condition: Box<Expr<'a>>,
+    pub block: Block<'a>,
+    pub span: Span<'a>,
+}
+
+impl<'a> Node<'a> for If<'a> {
+    fn as_node(&self) -> &dyn Node<'a> {
+        self
+    }
+
+    fn children(&self) -> Vec<&dyn Node<'a>> {
+        vec![&*self.condition, &self.block]
+    }
+
+    fn span(&self) -> Span<'a> {
+        self.span
+    }
+}
+
+#[derive(Debug)]
 pub enum Statement<'a> {
     Error(Box<ErrorStatement<'a>>),
     Assignment(Box<Assignment<'a>>),
     Call(Box<Call<'a>>),
+    IfCond(Box<If<'a>>),
 }
 
 impl<'a> Node<'a> for Statement<'a> {
@@ -324,6 +346,7 @@ impl<'a> Node<'a> for Statement<'a> {
             Self::Error(e) => vec![e.as_node()],
             Self::Assignment(assign) => vec![assign.as_node()],
             Self::Call(c) => vec![c.as_node()],
+            Self::IfCond(c) => vec![c.as_node()],
         }
     }
 
@@ -332,6 +355,7 @@ impl<'a> Node<'a> for Statement<'a> {
             Self::Error(e) => e.span(),
             Self::Assignment(assign) => assign.span(),
             Self::Call(c) => c.span(),
+            Self::IfCond(c) => c.span(),
         }
     }
 }

@@ -7,7 +7,7 @@ use pest::{
 
 use super::{
     AssignOp, Assignment, BinaryExpr, Block, Call, ErrorPreamble, ErrorStatement, Expr, Identifier,
-    IntegerLiteral, Lvalue, Node, Preamble, Probe, Program, Statement, StringLiteral,
+    If, IntegerLiteral, Lvalue, Node, Preamble, Probe, Program, Statement, StringLiteral,
     UnknownPreamble, UnknownStatement,
 };
 
@@ -140,12 +140,28 @@ fn convert_call(pair: Pair<Rule>) -> Call {
     Call { func, args, span }
 }
 
+fn convert_if(pair: Pair<Rule>) -> If {
+    assert!(matches!(pair.as_rule(), Rule::r#if));
+    let span = pair.as_span();
+    let mut pairs = pair.into_inner();
+
+    let expr = convert_expr(pairs.next().unwrap());
+    let block = convert_block(pairs.next().unwrap());
+
+    If {
+        condition: Box::new(expr),
+        block,
+        span,
+    }
+}
+
 fn convert_statement(pair: Pair<Rule>) -> Statement {
     assert!(matches!(pair.as_rule(), Rule::statement));
     let pair = pair.into_inner().exactly_one().unwrap();
     match pair.as_rule() {
         Rule::assignment => Statement::Assignment(Box::new(convert_assignment(pair))),
         Rule::call => Statement::Call(Box::new(convert_call(pair))),
+        Rule::r#if => Statement::IfCond(Box::new(convert_if(pair))),
         _ => unreachable!(),
     }
 }
