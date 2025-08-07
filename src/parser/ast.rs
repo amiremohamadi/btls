@@ -73,6 +73,7 @@ fn convert_primary_expr(pair: Pair<Rule>) -> Expr {
         Rule::identifier => Expr::Identifier(Box::new(convert_ident(pair))),
         Rule::number => Expr::Integer(Box::new(convert_int(pair))),
         Rule::string => Expr::String(Box::new(convert_str(pair))),
+        Rule::call => Expr::Call(Box::new(convert_call(pair))),
         _ => unreachable!(),
     }
 }
@@ -161,8 +162,8 @@ fn convert_statement(pair: Pair<Rule>) -> Statement {
     let pair = pair.into_inner().exactly_one().unwrap();
     match pair.as_rule() {
         Rule::assignment => Statement::Assignment(Box::new(convert_assignment(pair))),
-        Rule::call => Statement::Call(Box::new(convert_call(pair))),
         Rule::r#if => Statement::IfCond(Box::new(convert_if(pair))),
+        Rule::expr => Statement::Expr(Box::new(convert_expr(pair))),
         _ => unreachable!(),
     }
 }

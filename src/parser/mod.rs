@@ -229,6 +229,7 @@ pub enum Expr<'a> {
     Identifier(Box<Identifier<'a>>),
     Integer(Box<IntegerLiteral<'a>>),
     String(Box<StringLiteral<'a>>),
+    Call(Box<Call<'a>>),
     BinaryExpr(Box<BinaryExpr<'a>>),
 }
 
@@ -242,6 +243,7 @@ impl<'a> Node<'a> for Expr<'a> {
             Self::Integer(n) => vec![n.as_node()],
             Self::String(s) => vec![s.as_node()],
             Self::Identifier(ident) => vec![ident.as_node()],
+            Self::Call(func) => vec![func.as_node()],
             Self::BinaryExpr(expr) => vec![expr.as_node()],
         }
     }
@@ -251,6 +253,7 @@ impl<'a> Node<'a> for Expr<'a> {
             Self::Integer(n) => n.span(),
             Self::String(s) => s.span(),
             Self::Identifier(ident) => ident.span(),
+            Self::Call(func) => func.span(),
             Self::BinaryExpr(expr) => expr.span(),
         }
     }
@@ -332,8 +335,8 @@ impl<'a> Node<'a> for If<'a> {
 pub enum Statement<'a> {
     Error(Box<ErrorStatement<'a>>),
     Assignment(Box<Assignment<'a>>),
-    Call(Box<Call<'a>>),
     IfCond(Box<If<'a>>),
+    Expr(Box<Expr<'a>>),
 }
 
 impl<'a> Node<'a> for Statement<'a> {
@@ -345,8 +348,8 @@ impl<'a> Node<'a> for Statement<'a> {
         match self {
             Self::Error(e) => vec![e.as_node()],
             Self::Assignment(assign) => vec![assign.as_node()],
-            Self::Call(c) => vec![c.as_node()],
             Self::IfCond(c) => vec![c.as_node()],
+            Self::Expr(e) => vec![e.as_node()],
         }
     }
 
@@ -354,8 +357,8 @@ impl<'a> Node<'a> for Statement<'a> {
         match self {
             Self::Error(e) => e.span(),
             Self::Assignment(assign) => assign.span(),
-            Self::Call(c) => c.span(),
             Self::IfCond(c) => c.span(),
+            Self::Expr(e) => e.span(),
         }
     }
 }

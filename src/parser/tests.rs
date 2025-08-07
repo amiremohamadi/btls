@@ -6,6 +6,7 @@ use super::*;
 fn parse_no_errors(input: &str) {
     let prog = parse(input).unwrap();
     let errors: Vec<_> = prog.errors().collect();
+    println!("{:?}", errors);
     assert!(errors.is_empty(), "parse failed!");
 }
 
@@ -21,7 +22,9 @@ fn test_sanity() {
     parse_no_errors("END, BEGIN { $x  = 1   ; }");
     parse_no_errors("END, BEGIN / 1 / {}");
     parse_no_errors("BEGIN { $x = 1 + 2 - 3 * 4; }");
+    parse_no_errors("BEGIN { $x = 1 + 2 - 3 * func($y, $z); }");
     parse_no_errors("BEGIN { if ($x == 1) {} }");
+    parse_no_errors("BEGIN { if ($x == 1) { return; } }");
 
     // should fail
     // variable outside probe
@@ -83,5 +86,8 @@ fn test_calls() {
         panic!("not a probe!");
     };
     assert_eq!(probe.block.statements.len(), 6);
-    assert!(matches!(probe.block.statements[1], Statement::Call(_)));
+    let Statement::Expr(call) = &probe.block.statements[1] else {
+        panic!("not an expression!");
+    };
+    assert!(matches!(call.as_ref(), Expr::Call(_)));
 }
