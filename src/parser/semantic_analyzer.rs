@@ -1,4 +1,5 @@
 use super::{Lvalue, Preamble, Program, Statement};
+use anyhow::Result;
 
 pub struct SemanticAnalyzer {
     pub content: String,
@@ -17,9 +18,9 @@ impl SemanticAnalyzer {
         }
     }
 
-    pub fn analyze(&mut self, path: &str) -> AnalyzedFile {
+    pub fn analyze(&mut self, path: &str) -> Result<AnalyzedFile> {
         self.content = std::fs::read_to_string(path).unwrap();
-        let ast = super::ast::parse(&self.content);
+        let ast = super::ast::parse(&self.content)?;
         let variables = ast
             .preambles
             .iter()
@@ -38,6 +39,6 @@ impl SemanticAnalyzer {
                 }
             })
             .collect();
-        AnalyzedFile { ast, variables }
+        Ok(AnalyzedFile { ast, variables })
     }
 }

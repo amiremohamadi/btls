@@ -4,7 +4,7 @@ use super::ast::parse;
 use super::*;
 
 fn parse_no_errors(input: &str) {
-    let prog = parse(input);
+    let prog = parse(input).unwrap();
     let errors: Vec<_> = prog.errors().collect();
     assert!(errors.is_empty(), "parse failed!");
 }
@@ -25,7 +25,7 @@ fn test_sanity() {
 
     // should fail
     // variable outside probe
-    let prog = parse("$x = 1");
+    let prog = parse("$x = 1").unwrap();
     assert!(
         prog.errors().collect::<Vec<_>>().len() > 0,
         "parsed without any errors!"
@@ -34,7 +34,7 @@ fn test_sanity() {
 
 #[test]
 fn test_probe() {
-    let prog = parse("tracepoint:sched:* { }");
+    let prog = parse("tracepoint:sched:* { }").unwrap();
     assert_eq!(prog.preambles.len(), 1);
 
     let Preamble::Probe(probe) = &prog.preambles[0] else {
@@ -54,7 +54,8 @@ fn test_statements() {
         $x -= 0;
         $str = "string";
     }"#,
-    );
+    )
+    .unwrap();
     let Preamble::Probe(probe) = &prog.preambles[0] else {
         panic!("not a probe!");
     };
@@ -76,7 +77,8 @@ fn test_calls() {
         func( 1, 2, $x );
         $z = func(69);
     }"#,
-    );
+    )
+    .unwrap();
     let Preamble::Probe(probe) = &prog.preambles[0] else {
         panic!("not a probe!");
     };

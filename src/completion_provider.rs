@@ -1,6 +1,6 @@
 use super::builtins::BUILTINS;
 use super::server::Context;
-use tower_lsp::jsonrpc::Result;
+use tower_lsp::jsonrpc::{Error, ErrorCode, Result};
 use tower_lsp::lsp_types::{
     CompletionItem, CompletionItemKind, CompletionParams, CompletionResponse, Documentation,
     MarkupContent, MarkupKind,
@@ -26,12 +26,21 @@ pub async fn completion(
     params: CompletionParams,
 ) -> Result<Option<CompletionResponse>> {
     let mut analyzer = context.analyzer.lock().await;
-    let analyzed_file = analyzer.analyze(params.text_document_position.text_document.uri.path());
-    let variables = analyzed_file.variables.iter().map(|x| CompletionItem {
-        label: x.to_string(),
-        kind: Some(CompletionItemKind::VARIABLE),
-        ..Default::default()
-    });
+    let variables = match analyzer
+        .analyze(params.text_document_position.text_document.uri.path())
+        .map_err(|_| Error::new(ErrorCode::InternalError))
+    {
+        Ok(f) => f
+            .variables
+            .iter()
+            .map(|x| CompletionItem {
+                label: x.to_string(),
+                kind: Some(CompletionItemKind::VARIABLE),
+                ..Default::default()
+            })
+            .collect(),
+        _ => Vec::new(),
+    };
 
     let builtin_keywords =
         builtin_to_completion_item!(BUILTINS.keywords, CompletionItemKind::KEYWORD);
@@ -40,6 +49,7 @@ pub async fn completion(
 
     Ok(Some(CompletionResponse::Array(
         variables
+            .into_iter()
             .chain(builtin_keywords)
             .chain(builtin_funcs)
             .collect(),

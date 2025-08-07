@@ -1,3 +1,4 @@
+use anyhow::Result;
 use itertools::Itertools;
 use pest::{
     Parser, Span,
@@ -255,10 +256,9 @@ fn convert_prog(pair: Pair<Rule>) -> Program {
     Program { preambles, span }
 }
 
-pub fn parse(input: &str) -> Program {
-    let pair = BPFTraceParser::parse(Rule::program, input)
-        .unwrap()
+pub fn parse(input: &str) -> Result<Program> {
+    let pair = BPFTraceParser::parse(Rule::program, input)?
         .exactly_one()
-        .unwrap();
-    convert_prog(pair)
+        .map_err(|_| anyhow::anyhow!("failed to consume"))?;
+    Ok(convert_prog(pair))
 }

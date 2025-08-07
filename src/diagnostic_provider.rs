@@ -1,5 +1,6 @@
 use super::parser::Node;
 use super::server::Context;
+use tower_lsp::jsonrpc::{Error, ErrorCode};
 use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, Position, Range, Url};
 
 fn to_position(content: &str, pos: usize) -> Position {
@@ -13,8 +14,14 @@ pub async fn publish_diagnostics(context: &Context, uri: Url) {
         return;
     }
 
-    let mut ast = context.analyzer.lock().await;
-    let analyzed_file = ast.analyze(&uri.path());
+    let mut analyzer = context.analyzer.lock().await;
+    let analyzed_file = match analyzer
+        .analyze(&uri.path())
+        .map_err(|_| Error::new(ErrorCode::InternalError))
+    {
+        Ok(f) => f,
+        _ => return,
+    };
 
     let content = std::fs::read_to_string(&uri.path()).unwrap();
 
