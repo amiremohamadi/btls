@@ -75,13 +75,12 @@ def export_symbols(field, symbols, target):
 
 
 def generate_builtins():
-    with open('./stdlib.md', 'r') as f:
-        content = _get_bpftrace_stdlib_docs()
-        markdown = mistune.create_markdown(renderer=mistune.AstRenderer(),
-                                           plugins=[plugin_table])
-        ast = markdown(content)
-        builtin_vars = _parse_vars_table(ast)
-        builtin_funcs = _parse_functions_docs(content)
+    content = _get_bpftrace_stdlib_docs()
+    markdown = mistune.create_markdown(renderer=mistune.AstRenderer(),
+                                       plugins=[plugin_table])
+    ast = markdown(content)
+    builtin_vars = _parse_vars_table(ast)
+    builtin_funcs = _parse_functions_docs(content)
 
     with open('./target/builtins.gen.rs', 'w') as target:
         print('// DO NOT EDIT -- this file is auto generated\n',
