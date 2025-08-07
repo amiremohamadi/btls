@@ -1,7 +1,8 @@
+use super::client::Client;
 use super::parser::semantic_analyzer::SemanticAnalyzer;
 use tokio::sync::Mutex;
 use tower_lsp::{
-    Client, LanguageServer, LspService, Server,
+    LanguageServer, LspService, Server,
     jsonrpc::Result,
     lsp_types::{
         CompletionOptions, CompletionParams, CompletionResponse, DidOpenTextDocumentParams,
@@ -62,6 +63,7 @@ impl LanguageServer for Backend {
 pub async fn run() {
     let analyzer = SemanticAnalyzer::new();
     let (service, socket) = LspService::new(move |client| {
+        let client = Client::new(client);
         let context = Context {
             client,
             analyzer: tokio::sync::Mutex::new(analyzer),

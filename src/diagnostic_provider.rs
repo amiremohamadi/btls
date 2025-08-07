@@ -8,6 +8,11 @@ fn to_position(content: &str, pos: usize) -> Position {
 }
 
 pub async fn publish_diagnostics(context: &Context, uri: Url) {
+    let config = context.client.config().await;
+    if !config.diagnostics {
+        return;
+    }
+
     let mut ast = context.analyzer.lock().await;
     let analyzed_file = ast.analyze(&uri.path());
 

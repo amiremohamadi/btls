@@ -88,6 +88,8 @@ dependencies = [
  "itertools",
  "pest",
  "pest_derive",
+ "serde",
+ "serde_json",
  "tokio",
  "tower-lsp",
 ]

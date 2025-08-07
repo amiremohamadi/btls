@@ -1,6 +1,11 @@
 local client = vim.lsp.start_client {
     name = "btls",
-    cmd = { "./target/debug/btls" }
+    cmd = { "./target/debug/btls" },
+    settings = {
+        btls = {
+            diagnostics = true,
+        }
+    }
 }
 
 vim.filetype.add({
