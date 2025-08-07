@@ -2,7 +2,7 @@ use std::process::Command;
 
 fn main() {
     assert!(
-       Command::new("/usr/bin/env")
+        Command::new("/usr/bin/env")
             .arg("python")
             .arg("./scripts/generate.py")
             .output()
