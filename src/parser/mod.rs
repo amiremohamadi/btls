@@ -60,6 +60,39 @@ impl<T> Iterator for FilterWalk<'_, '_, T> {
 }
 
 #[derive(Debug)]
+pub struct UndefinedIdent<'a> {
+    pub text: &'a str,
+    pub span: Span<'a>,
+}
+
+impl<'a> UndefinedIdent<'a> {
+    pub fn new(text: &'a str, span: Span<'a>) -> Statement<'a> {
+        Statement::Error(Box::new(ErrorStatement::UndefinedIdent(Box::new(Self {
+            text,
+            span,
+        }))))
+    }
+
+    pub fn diagnosis(&self) -> String {
+        format!("Undefined Identifier \"{}\"", self.text.trim())
+    }
+}
+
+impl<'a> Node<'a> for UndefinedIdent<'a> {
+    fn as_node(&self) -> &dyn Node<'a> {
+        self
+    }
+
+    fn children(&self) -> Vec<&dyn Node<'a>> {
+        Vec::new()
+    }
+
+    fn span(&self) -> Span<'a> {
+        self.span
+    }
+}
+
+#[derive(Debug)]
 pub struct UnknownStatement<'a> {
     pub text: &'a str,
     pub span: Span<'a>,
@@ -88,12 +121,14 @@ impl<'a> Node<'a> for UnknownStatement<'a> {
 #[derive(Debug)]
 pub enum ErrorStatement<'a> {
     UnknownStatement(Box<UnknownStatement<'a>>),
+    UndefinedIdent(Box<UndefinedIdent<'a>>),
 }
 
 impl<'a> ErrorStatement<'a> {
     pub fn diagnosis(&self) -> String {
         match self {
-            Self::UnknownStatement(stmt) => stmt.diagnosis(),
+            Self::UnknownStatement(e) => e.diagnosis(),
+            Self::UndefinedIdent(e) => e.diagnosis(),
         }
     }
 }
@@ -105,13 +140,15 @@ impl<'a> Node<'a> for ErrorStatement<'a> {
 
     fn children(&self) -> Vec<&dyn Node<'a>> {
         match self {
-            Self::UnknownStatement(stmt) => vec![stmt.as_node()],
+            Self::UnknownStatement(e) => vec![e.as_node()],
+            Self::UndefinedIdent(e) => vec![e.as_node()],
         }
     }
 
     fn span(&self) -> Span<'a> {
         match self {
-            Self::UnknownStatement(stmt) => stmt.span(),
+            Self::UnknownStatement(e) => e.span(),
+            Self::UndefinedIdent(e) => e.span(),
         }
     }
 
