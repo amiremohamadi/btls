@@ -1,4 +1,4 @@
-use super::{Lvalue, Preamble, Program, Statement, UndefinedIdent};
+use super::{Expr, Lvalue, Preamble, Program, Statement, UndefinedIdent};
 use crate::builtins::BUILTINS;
 use anyhow::Result;
 
@@ -27,9 +27,14 @@ impl SemanticAnalyzer {
                     Lvalue::Identifier(ident) => variables.push(format!("${}", ident.name)),
                 },
                 Statement::Expr(e) => {
-                    // TODO: check for user-defined variables as well
-                    if let super::Expr::Identifier(ident) = e.as_ref() {
-                        (!BUILTINS.keywords.iter().any(|x| x.name == ident.name)).then(|| {
+                    if let Expr::Identifier(ident) = e.as_ref() {
+                        let mut keywords = variables
+                            .iter()
+                            .filter_map(|x| x.strip_prefix("$"))
+                            .map(|x| x.to_string())
+                            .chain(BUILTINS.keywords.iter().map(|x| x.name.to_string()));
+
+                        (!keywords.any(|x| x == ident.name)).then(|| {
                             errors.push(UndefinedIdent::new(ident.name, ident.span));
                         });
                     }
