@@ -1,4 +1,4 @@
-use super::{Expr, Lvalue, Preamble, Program, Statement, UndefinedIdent};
+use super::{Block, Expr, Lvalue, Node, Preamble, Program, Statement, UndefinedIdent, Walk};
 use crate::builtins::BUILTINS;
 use anyhow::Result;
 
@@ -19,46 +19,45 @@ impl SemanticAnalyzer {
         }
     }
 
-    fn _analyze_block(&self, block: &mut super::Block, variables: &mut Vec<String>) {
-        let mut errors = vec![];
-        for s in block.statements.iter_mut() {
-            match s {
-                Statement::Assignment(a) => match &a.lvalue {
-                    Lvalue::Identifier(ident) => variables.push(format!("${}", ident.name)),
-                },
-                Statement::Expr(e) => {
-                    if let Expr::Identifier(ident) = e.as_ref() {
-                        let mut keywords = variables
-                            .iter()
-                            .filter_map(|x| x.strip_prefix("$"))
-                            .map(|x| x.to_string())
-                            .chain(BUILTINS.keywords.iter().map(|x| x.name.to_string()));
-
-                        (!keywords.any(|x| x == ident.name)).then(|| {
-                            errors.push(UndefinedIdent::new(ident.name, ident.span));
-                        });
-                    }
-                }
-                Statement::IfCond(c) => {
-                    self._analyze_block(&mut c.block, variables);
-                }
-                _ => {}
-            }
-        }
-        block.statements.extend(errors);
-    }
-
     pub fn analyze(&mut self, path: &str) -> Result<AnalyzedFile> {
         self.content = std::fs::read_to_string(path).unwrap();
         let mut ast = super::ast::parse(&self.content)?;
         let mut variables = vec![];
+        let mut errors = vec![];
 
-        for p in ast.preambles.iter_mut() {
-            match p {
-                Preamble::Probe(p) => self._analyze_block(&mut p.block, &mut variables),
-                _ => {}
+        let root = Walk::new(ast.as_node());
+        root.into_iter().for_each(|n| {
+            if let Some(Expr::Identifier(ident)) = n.as_expr() {
+                let mut keywords = variables
+                    .iter()
+                    .filter_map(|x: &String| x.strip_prefix("$"))
+                    .map(|x| x.to_string())
+                    .chain(BUILTINS.keywords.iter().map(|x| x.name.to_string()));
+
+                (!keywords.any(|x| x == ident.name)).then(|| {
+                    errors.push(UndefinedIdent::new(ident.name, ident.span));
+                });
             }
-        }
+            if let Some(stmt) = n.as_statement() {
+                match stmt {
+                    Statement::Assignment(a) => match &a.lvalue {
+                        Lvalue::Identifier(ident) => variables.push(format!("${}", ident.name)),
+                    },
+                    _ => {}
+                }
+            }
+        });
+
+        // TODO: append errors to their associated block
+        // currently, we just append the errors to the first block (which works fine)
+        ast.preambles
+            .iter_mut()
+            .filter_map(|x| match x {
+                Preamble::Probe(p) => Some(&mut p.block),
+                _ => None,
+            })
+            .next()
+            .map(|x| x.statements.extend(errors));
 
         Ok(AnalyzedFile { ast, variables })
     }

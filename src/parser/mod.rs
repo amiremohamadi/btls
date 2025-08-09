@@ -14,6 +14,14 @@ pub trait Node<'a> {
         None
     }
 
+    fn as_statement(&self) -> Option<&Statement<'a>> {
+        None
+    }
+
+    fn as_expr(&self) -> Option<&Expr<'a>> {
+        None
+    }
+
     fn errors<'b>(&'b self) -> FilterWalk<'a, 'b, ErrorRef<'a, 'b>> {
         FilterWalk::new(self.as_node(), |node| node.as_error())
     }
@@ -275,6 +283,10 @@ impl<'a> Node<'a> for Expr<'a> {
         self
     }
 
+    fn as_expr(&self) -> Option<&Expr<'a>> {
+        Some(self)
+    }
+
     fn children(&self) -> Vec<&dyn Node<'a>> {
         match self {
             Self::Integer(n) => vec![n.as_node()],
@@ -379,6 +391,10 @@ pub enum Statement<'a> {
 impl<'a> Node<'a> for Statement<'a> {
     fn as_node(&self) -> &dyn Node<'a> {
         self
+    }
+
+    fn as_statement(&self) -> Option<&Statement<'a>> {
+        Some(self)
     }
 
     fn children(&self) -> Vec<&dyn Node<'a>> {
