@@ -27,8 +27,9 @@ assign_op  = { "=" | "+=" | "-=" }
 assignment = { "$" ~ identifier ~ assign_op ~ expr }
 call       = { identifier ~ "(" ~ expr_list ~ ")" }
 if         = { "if" ~ "(" ~ expr ~ ")" ~ block }
+while      = { "while" ~ "(" ~ expr ~ ")" ~ block }
 base_stmt  = _{ assignment | expr }
-statement  = { base_stmt ~ ";" | if }
+statement  = { base_stmt ~ ";" | if | while }
 block      = { "{" ~ (COMMENT | statement | error)* ~ "}" }
 
 attach_point      = { (identifier | ":" | "*")+ }

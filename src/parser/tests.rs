@@ -28,6 +28,7 @@ fn test_sanity() {
     parse_no_errors("BEGIN { $x = 1 + 2 - 3 * func($y, $z); }");
     parse_no_errors("BEGIN { if ($x == 1) {} }");
     parse_no_errors("BEGIN { if ($x == 1) { return; } }");
+    parse_no_errors("BEGIN { while ($x < $y) { return; } }");
 
     // should fail
     // variable outside probe
@@ -113,4 +114,27 @@ fn test_calls() {
         panic!("not an expression!");
     };
     assert!(matches!(call.as_ref(), Expr::Call(_)));
+}
+
+#[test]
+fn test_loops() {
+    let prog = parse(
+        r#"BEGIN {
+            while ($x < 69) {
+                $x += 1;
+            }
+
+            while ($y != $x) {}
+        }"#,
+    )
+    .unwrap();
+
+    let walk = Walk::new(prog.as_node());
+    let loops = walk
+        .into_iter()
+        .filter(|n| matches!(n.as_statement(), Some(Statement::Loop(..))))
+        .collect::<Vec<_>>()
+        .len();
+
+    assert_eq!(loops, 2);
 }

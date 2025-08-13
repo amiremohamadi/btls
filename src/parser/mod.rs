@@ -360,6 +360,50 @@ impl<'a> Node<'a> for Assignment<'a> {
 }
 
 #[derive(Debug)]
+pub enum Loop<'a> {
+    While(Box<While<'a>>),
+}
+
+impl<'a> Node<'a> for Loop<'a> {
+    fn as_node(&self) -> &dyn Node<'a> {
+        self
+    }
+
+    fn children(&self) -> Vec<&dyn Node<'a>> {
+        match self {
+            Self::While(w) => w.children(),
+        }
+    }
+
+    fn span(&self) -> Span<'a> {
+        match self {
+            Self::While(w) => w.span(),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct While<'a> {
+    pub condition: Box<Expr<'a>>,
+    pub block: Block<'a>,
+    pub span: Span<'a>,
+}
+
+impl<'a> Node<'a> for While<'a> {
+    fn as_node(&self) -> &dyn Node<'a> {
+        self
+    }
+
+    fn children(&self) -> Vec<&dyn Node<'a>> {
+        vec![&*self.condition, &self.block]
+    }
+
+    fn span(&self) -> Span<'a> {
+        self.span
+    }
+}
+
+#[derive(Debug)]
 pub struct If<'a> {
     pub condition: Box<Expr<'a>>,
     pub block: Block<'a>,
@@ -385,6 +429,7 @@ pub enum Statement<'a> {
     Error(Box<ErrorStatement<'a>>),
     Assignment(Box<Assignment<'a>>),
     IfCond(Box<If<'a>>),
+    Loop(Box<Loop<'a>>),
     Expr(Box<Expr<'a>>),
 }
 
@@ -402,6 +447,7 @@ impl<'a> Node<'a> for Statement<'a> {
             Self::Error(e) => vec![e.as_node()],
             Self::Assignment(assign) => vec![assign.as_node()],
             Self::IfCond(c) => vec![c.as_node()],
+            Self::Loop(c) => vec![c.as_node()],
             Self::Expr(e) => vec![e.as_node()],
         }
     }
@@ -411,6 +457,7 @@ impl<'a> Node<'a> for Statement<'a> {
             Self::Error(e) => e.span(),
             Self::Assignment(assign) => assign.span(),
             Self::IfCond(c) => c.span(),
+            Self::Loop(c) => c.span(),
             Self::Expr(e) => e.span(),
         }
     }
