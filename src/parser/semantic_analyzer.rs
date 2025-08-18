@@ -1,4 +1,6 @@
-use super::{Block, Expr, Lvalue, Node, Preamble, Program, Statement, UndefinedIdent, Walk};
+use super::{
+    Block, Expr, Lvalue, Node, Preamble, Program, Statement, UndefinedFunc, UndefinedIdent, Walk,
+};
 use crate::builtins::BUILTINS;
 use anyhow::Result;
 
@@ -27,16 +29,29 @@ impl SemanticAnalyzer {
 
         let root = Walk::new(ast.as_node());
         root.into_iter().for_each(|n| {
-            if let Some(Expr::Identifier(ident)) = n.as_expr() {
-                let mut keywords = variables
-                    .iter()
-                    .filter_map(|x: &String| x.strip_prefix("$"))
-                    .map(|x| x.to_string())
-                    .chain(BUILTINS.keywords.iter().map(|x| x.name.to_string()));
+            match n.as_expr() {
+                Some(Expr::Identifier(ident)) => {
+                    let mut keywords = variables
+                        .iter()
+                        .filter_map(|x: &String| x.strip_prefix("$"))
+                        .map(|x| x.to_string())
+                        .chain(BUILTINS.keywords.iter().map(|x| x.name.to_string()));
 
-                (!keywords.any(|x| x == ident.name)).then(|| {
-                    errors.push(UndefinedIdent::new(ident.name, ident.span));
-                });
+                    (!keywords.any(|x| x == ident.name)).then(|| {
+                        errors.push(UndefinedIdent::new(ident.name, ident.span));
+                    });
+                }
+                Some(Expr::Call(call)) => {
+                    (!BUILTINS
+                        .functions
+                        .iter()
+                        .map(|x| x.name)
+                        .any(|x| x == call.func.name))
+                    .then(|| {
+                        errors.push(UndefinedFunc::new(call.func.name, call.span()));
+                    });
+                }
+                _ => {}
             }
             if let Some(stmt) = n.as_statement() {
                 match stmt {
