@@ -1,3 +1,4 @@
+mod analyzer;
 mod builtins;
 mod client;
 mod completion_provider;

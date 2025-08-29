@@ -1,12 +1,13 @@
+use super::analyzer::semantic_analyzer::SemanticAnalyzer;
 use super::client::Client;
-use super::parser::semantic_analyzer::SemanticAnalyzer;
 use tokio::sync::Mutex;
 use tower_lsp::{
     LanguageServer, LspService, Server,
     jsonrpc::Result,
     lsp_types::{
-        CompletionOptions, CompletionParams, CompletionResponse, DidOpenTextDocumentParams,
-        InitializeParams, InitializeResult, InitializedParams, MessageType, ServerCapabilities,
+        CompletionOptions, CompletionParams, CompletionResponse, DidChangeTextDocumentParams,
+        DidOpenTextDocumentParams, InitializeParams, InitializeResult, InitializedParams,
+        MessageType, ServerCapabilities,
     },
 };
 
@@ -54,6 +55,12 @@ impl LanguageServer for Backend {
             .await;
         // analyzer.analyze(params.text_document.uri.path());
     }
+
+    // async fn did_change(&self, params: DidChangeTextDocumentParams) {
+    //     self.context.client.log_message(MessageType::INFO, format!("{:?}", params.content_changes)).await;
+    //     super::diagnostic_provider::publish_diagnostics(&self.context, params.text_document.uri)
+    //         .await;
+    // }
 
     async fn shutdown(&self) -> Result<()> {
         Ok(())

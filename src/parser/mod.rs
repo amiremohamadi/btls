@@ -1,5 +1,4 @@
-mod ast;
-pub mod semantic_analyzer;
+pub mod ast;
 mod tests;
 
 use pest::Span;

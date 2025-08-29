@@ -1,7 +1,8 @@
-use super::{
-    Block, Expr, Lvalue, Node, Preamble, Program, Statement, UndefinedFunc, UndefinedIdent, Walk,
-};
 use crate::builtins::BUILTINS;
+use crate::parser::{
+    Expr, Lvalue, Node, Preamble, Program, Statement, UndefinedFunc, UndefinedIdent, Walk,
+    ast::parse,
+};
 use anyhow::Result;
 
 pub struct SemanticAnalyzer {
@@ -23,7 +24,7 @@ impl SemanticAnalyzer {
 
     pub fn analyze(&mut self, path: &str) -> Result<AnalyzedFile> {
         self.content = std::fs::read_to_string(path).unwrap();
-        let mut ast = super::ast::parse(&self.content)?;
+        let mut ast = parse(&self.content)?;
         let mut variables = vec![];
         let mut errors = vec![];
 
