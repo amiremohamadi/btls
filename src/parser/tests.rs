@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::io::Write;
+use std::mem::discriminant;
 use tempfile::NamedTempFile;
 
 use super::ast::parse;
@@ -9,7 +10,6 @@ use super::*;
 fn parse_no_errors(input: &str) {
     let prog = parse(input).unwrap();
     let errors: Vec<_> = prog.errors().collect();
-    println!("{:?}", errors);
     assert!(errors.is_empty(), "parse failed!");
 }
 
@@ -36,6 +36,27 @@ fn test_sanity() {
     assert!(
         prog.errors().collect::<Vec<_>>().len() > 0,
         "parsed without any errors!"
+    );
+    assert!(
+        matches!(
+            prog.errors().next().unwrap(),
+            ErrorRef::Preamble(ErrorPreamble::UnknownPreamble(_))
+        ),
+        "unexpected error type"
+    );
+
+    // unmatched brace
+    let prog = parse("BEGIN { } }").unwrap();
+    assert!(
+        prog.errors().collect::<Vec<_>>().len() > 0,
+        "parsed without any errors!"
+    );
+    assert!(
+        matches!(
+            prog.errors().next().unwrap(),
+            ErrorRef::Preamble(ErrorPreamble::UnmatchedBrace(_))
+        ),
+        "unexpected error type"
     );
 }
 

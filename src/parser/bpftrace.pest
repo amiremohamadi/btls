@@ -41,4 +41,5 @@ preamble          = { probe }
 error        =  { rest_of_line }
 rest_of_line = @{ (!(NEWLINE | "}") ~ ANY)+ ~ NEWLINE? }
 
-program = { SOI ~ (COMMENT | preamble | error)* ~ EOI }
+unmatched_brace = { "}" }
+program = { SOI ~ (COMMENT | preamble | error | unmatched_brace)* ~ EOI }

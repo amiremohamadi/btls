@@ -501,6 +501,31 @@ impl<'a> Node<'a> for Statement<'a> {
 }
 
 #[derive(Debug)]
+pub struct UnmatchedBrace<'a> {
+    pub span: Span<'a>,
+}
+
+impl<'a> UnmatchedBrace<'a> {
+    pub fn diagnosis(&self) -> String {
+        "Unmatched brace".to_string()
+    }
+}
+
+impl<'a> Node<'a> for UnmatchedBrace<'a> {
+    fn as_node(&self) -> &dyn Node<'a> {
+        self
+    }
+
+    fn children(&self) -> Vec<&dyn Node<'a>> {
+        Vec::new()
+    }
+
+    fn span(&self) -> Span<'a> {
+        self.span
+    }
+}
+
+#[derive(Debug)]
 pub struct UnknownPreamble<'a> {
     pub text: &'a str,
     pub span: Span<'a>,
@@ -529,12 +554,14 @@ impl<'a> Node<'a> for UnknownPreamble<'a> {
 #[derive(Debug)]
 pub enum ErrorPreamble<'a> {
     UnknownPreamble(Box<UnknownPreamble<'a>>),
+    UnmatchedBrace(Box<UnmatchedBrace<'a>>),
 }
 
 impl<'a> ErrorPreamble<'a> {
     pub fn diagnosis(&self) -> String {
         match self {
-            Self::UnknownPreamble(pream) => pream.diagnosis(),
+            Self::UnknownPreamble(e) => e.diagnosis(),
+            Self::UnmatchedBrace(e) => e.diagnosis(),
         }
     }
 }
@@ -546,13 +573,15 @@ impl<'a> Node<'a> for ErrorPreamble<'a> {
 
     fn children(&self) -> Vec<&dyn Node<'a>> {
         match self {
-            Self::UnknownPreamble(p) => vec![p.as_node()],
+            Self::UnknownPreamble(x) => vec![x.as_node()],
+            Self::UnmatchedBrace(x) => vec![x.as_node()],
         }
     }
 
     fn span(&self) -> Span<'a> {
         match self {
-            Self::UnknownPreamble(p) => p.span(),
+            Self::UnknownPreamble(x) => x.span(),
+            Self::UnmatchedBrace(x) => x.span(),
         }
     }
 

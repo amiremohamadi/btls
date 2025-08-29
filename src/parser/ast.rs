@@ -9,7 +9,7 @@ use pest::{
 use super::{
     AssignOp, Assignment, BinaryExpr, Block, Call, ErrorPreamble, ErrorStatement, Expr, Identifier,
     If, IntegerLiteral, Loop, Lvalue, Node, Preamble, Probe, Program, Statement, StringLiteral,
-    UnknownPreamble, UnknownStatement, While,
+    UnknownPreamble, UnknownStatement, UnmatchedBrace, While,
 };
 
 #[derive(pest_derive::Parser)]
@@ -267,6 +267,11 @@ fn convert_prog(pair: Pair<Rule>) -> Program {
                     span: pair.as_span(),
                 }),
             )))),
+            Rule::unmatched_brace => Some(Preamble::Error(Box::new(
+                ErrorPreamble::UnmatchedBrace(Box::new(UnmatchedBrace {
+                    span: pair.as_span(),
+                })),
+            ))),
             _ => None,
         })
         .collect();
