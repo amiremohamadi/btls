@@ -6,6 +6,7 @@ mod config;
 mod diagnostic_provider;
 mod parser;
 mod server;
+mod storage;
 
 #[tokio::main]
 async fn main() {

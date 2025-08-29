@@ -9,6 +9,10 @@ fn to_position(content: &str, pos: usize) -> Position {
 }
 
 pub async fn publish_diagnostics(context: &Context, uri: Url) {
+    let Ok(path) = uri.to_file_path() else {
+        return;
+    };
+
     let config = context.client.config().await;
     if !config.diagnostics {
         return;
@@ -16,14 +20,15 @@ pub async fn publish_diagnostics(context: &Context, uri: Url) {
 
     let mut analyzer = context.analyzer.lock().await;
     let analyzed_file = match analyzer
-        .analyze(&uri.path())
+        .analyze(context, &path)
+        .await
         .map_err(|_| Error::new(ErrorCode::InternalError))
     {
         Ok(f) => f,
         _ => return,
     };
 
-    let content = std::fs::read_to_string(&uri.path()).unwrap();
+    let content = context.storage.lock().await.read(&path);
 
     let digs = analyzed_file
         .ast

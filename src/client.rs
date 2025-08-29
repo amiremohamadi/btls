@@ -8,16 +8,23 @@ use tower_lsp::{
 static BTLS_SECTION: &str = "btls";
 
 pub struct Client {
-    pub inner: LSPClient,
+    pub inner: Option<LSPClient>,
 }
 
 impl Client {
     pub fn new(client: LSPClient) -> Self {
-        Self { inner: client }
+        Self {
+            inner: Some(client),
+        }
+    }
+
+    #[cfg(test)]
+    pub fn new_test() -> Self {
+        Self { inner: None }
     }
 
     pub async fn log_message<M: Display>(&self, typ: MessageType, message: M) {
-        self.inner.log_message(typ, message).await;
+        self.inner.as_ref().unwrap().log_message(typ, message).await;
     }
 
     pub async fn publish_diagnostics(
@@ -26,12 +33,18 @@ impl Client {
         diags: Vec<Diagnostic>,
         version: Option<i32>,
     ) {
-        self.inner.publish_diagnostics(uri, diags, version).await;
+        self.inner
+            .as_ref()
+            .unwrap()
+            .publish_diagnostics(uri, diags, version)
+            .await;
     }
 
     pub async fn config(&self) -> Config {
         let config = self
             .inner
+            .as_ref()
+            .unwrap()
             .configuration(vec![ConfigurationItem {
                 scope_uri: None,
                 section: Some(BTLS_SECTION.to_string()),

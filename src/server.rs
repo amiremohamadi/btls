@@ -1,5 +1,5 @@
-use super::analyzer::semantic_analyzer::SemanticAnalyzer;
-use super::client::Client;
+use super::{analyzer::semantic_analyzer::SemanticAnalyzer, client::Client, storage::Storage};
+use std::sync::Arc;
 use tokio::sync::Mutex;
 use tower_lsp::{
     LanguageServer, LspService, Server,
@@ -17,6 +17,7 @@ struct Backend {
 
 pub struct Context {
     pub client: Client,
+    pub storage: Arc<Mutex<Storage>>,
     pub analyzer: Mutex<SemanticAnalyzer>,
 }
 
@@ -46,21 +47,43 @@ impl LanguageServer for Backend {
     }
 
     async fn completion(&self, params: CompletionParams) -> Result<Option<CompletionResponse>> {
-        super::completion_provider::completion(&self.context, params).await
+        let Ok(path) = params
+            .text_document_position
+            .text_document
+            .uri
+            .to_file_path()
+        else {
+            return Ok(None);
+        };
+        super::completion_provider::completion(&self.context, &path).await
     }
 
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
-        // let mut analyzer = self.context.analyzer.lock().await;
+        let Ok(path) = params.text_document.uri.to_file_path() else {
+            return;
+        };
+        self.context
+            .storage
+            .lock()
+            .await
+            .load(&path, &params.text_document.text);
+
         super::diagnostic_provider::publish_diagnostics(&self.context, params.text_document.uri)
             .await;
-        // analyzer.analyze(params.text_document.uri.path());
     }
 
-    // async fn did_change(&self, params: DidChangeTextDocumentParams) {
-    //     self.context.client.log_message(MessageType::INFO, format!("{:?}", params.content_changes)).await;
-    //     super::diagnostic_provider::publish_diagnostics(&self.context, params.text_document.uri)
-    //         .await;
-    // }
+    async fn did_change(&self, params: DidChangeTextDocumentParams) {
+        let Ok(path) = params.text_document.uri.to_file_path() else {
+            return;
+        };
+        let Some(changes) = params.content_changes.first() else {
+            return;
+        };
+        self.context.storage.lock().await.load(&path, &changes.text);
+
+        super::diagnostic_provider::publish_diagnostics(&self.context, params.text_document.uri)
+            .await;
+    }
 
     async fn shutdown(&self) -> Result<()> {
         Ok(())
@@ -71,8 +94,10 @@ pub async fn run() {
     let analyzer = SemanticAnalyzer::new();
     let (service, socket) = LspService::new(move |client| {
         let client = Client::new(client);
+        let storage = Arc::new(Mutex::new(Storage::new()));
         let context = Context {
             client,
+            storage,
             analyzer: tokio::sync::Mutex::new(analyzer),
         };
         Backend { context }

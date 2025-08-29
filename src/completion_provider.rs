@@ -1,5 +1,6 @@
 use super::builtins::BUILTINS;
 use super::server::Context;
+use std::path::Path;
 use tower_lsp::jsonrpc::{Error, ErrorCode, Result};
 use tower_lsp::lsp_types::{
     CompletionItem, CompletionItemKind, CompletionParams, CompletionResponse, Documentation,
@@ -21,13 +22,11 @@ macro_rules! builtin_to_completion_item {
     };
 }
 
-pub async fn completion(
-    context: &Context,
-    params: CompletionParams,
-) -> Result<Option<CompletionResponse>> {
+pub async fn completion(context: &Context, path: &Path) -> Result<Option<CompletionResponse>> {
     let mut analyzer = context.analyzer.lock().await;
     let variables = match analyzer
-        .analyze(params.text_document_position.text_document.uri.path())
+        .analyze(context, path)
+        .await
         .map_err(|_| Error::new(ErrorCode::InternalError))
     {
         Ok(f) => f

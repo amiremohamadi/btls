@@ -3,7 +3,9 @@ use crate::parser::{
     Expr, Lvalue, Node, Preamble, Program, Statement, UndefinedFunc, UndefinedIdent, Walk,
     ast::parse,
 };
+use crate::server::Context;
 use anyhow::Result;
+use std::path::Path;
 
 pub struct SemanticAnalyzer {
     pub content: String,
@@ -22,8 +24,9 @@ impl SemanticAnalyzer {
         }
     }
 
-    pub fn analyze(&mut self, path: &str) -> Result<AnalyzedFile> {
-        self.content = std::fs::read_to_string(path).unwrap();
+    pub async fn analyze(&mut self, context: &Context, path: &Path) -> Result<AnalyzedFile> {
+        // self.content = std::fs::read_to_string(path).unwrap();
+        self.content = context.storage.lock().await.read(path);
         let mut ast = parse(&self.content)?;
         let mut variables = vec![];
         let mut errors = vec![];
