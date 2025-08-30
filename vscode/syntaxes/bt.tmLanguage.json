@@ -1,0 +1,100 @@
+{
+  "scopeName": "source.bpftrace",
+  "patterns": [
+    {
+      "include": "#preprocessor"
+    },
+    {
+      "include": "#comment"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#builtins"
+    },
+    {
+      "include": "#identifier"
+    },
+    {
+      "include": "#operators"
+    },
+    {
+      "include": "#literals"
+    }
+  ],
+  "repository": {
+    "preprocessor": {
+      "patterns": [
+        {
+          "match": "^#.*",
+          "name": "meta.preprocessor.bpftrace"
+        }
+      ]
+    },
+    "comment": {
+      "patterns": [
+        {
+          "match": "//.*",
+          "name": "comment.line.bpftrace"
+        },
+        {
+          "begin": "/\\*",
+          "end": "\\*/",
+          "name": "comment.block.bpftrace"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "match": "\\b(if|else)\\b",
+          "name": "keyword.control.if.bpftrace"
+        },
+        {
+          "match": "\\b(for|while)\\b",
+          "name": "keyword.control.loop.bpftrace"
+        }
+      ]
+    },
+    "builtins": {
+      "patterns": [
+        {
+          "match": "\\b(bswap|buf|cat|pid|tid|cgroupid|cgroup_path|errorf|exit|getopt|join|kaddr|kptr|kstack|ksym|len|macaddr|nsecs|ntop|offsetof|override|path|percpu_kaddr|print|printf|pton|reg|signal|sizeof|skboutput|socket_cookie|str|strcontains|strerror|strftime|strncmp|system|time|uaddr|uptr|ustack|usym|unwatch|assert|ppid|avg|clear|count|delete|has_key|hist|len|lhist|max|min|stats|sum|zero|tseries)\\b",
+          "name": "support.function.bpftrace"
+        },
+        {
+          "match": "\\b(args|cgroup|comm|cpid|cpu|ncpus|curtask|elapsed|func|gid|jiffies|numaid|pid|probe|rand|return|retval|tid|uid|username|usermode)\\b",
+          "name": "variable.language.bpftrace"
+        }
+      ]
+    },
+    "identifier": {
+      "match": "(\\$[A-Za-z_][A-Za-z0-9_]*|@[A-Za-z0-9_]*)",
+      "name": "variable.general.bpftrace"
+    },
+    "operators": {
+      "match": "(->|\\+|\\+=|-|-=|\\*|\\*=|/|/=|%|%=|\\^|==|!=|<|<=|>|>=|&&|\\|\\||!|=|&|\\||~|<<|>>|\\?|:|\\.|,|;)",
+      "name": "keyword.operator.bpftrace"
+    },
+    "literals": {
+      "patterns": [
+        {
+          "include": "#string"
+        },
+        {
+          "include": "#number"
+        }
+      ]
+    },
+    "string": {
+      "begin": "\"",
+      "end": "\"",
+      "name": "string.quoted.double.bpftrace"
+    },
+    "number": {
+      "match": "\\b-?\\d+\\b",
+      "name": "constant.numeric.bpftrace"
+    }
+  }
+}
