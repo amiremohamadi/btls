@@ -306,12 +306,33 @@ impl<'a> Node<'a> for BinaryExpr<'a> {
 }
 
 #[derive(Debug)]
+pub struct UnaryExpr<'a> {
+    pub expr: Box<Expr<'a>>,
+    pub span: Span<'a>,
+}
+
+impl<'a> Node<'a> for UnaryExpr<'a> {
+    fn as_node(&self) -> &dyn Node<'a> {
+        self
+    }
+
+    fn children(&self) -> Vec<&dyn Node<'a>> {
+        vec![&*self.expr]
+    }
+
+    fn span(&self) -> Span<'a> {
+        self.span
+    }
+}
+
+#[derive(Debug)]
 pub enum Expr<'a> {
     Identifier(Box<Identifier<'a>>),
     Integer(Box<IntegerLiteral<'a>>),
     String(Box<StringLiteral<'a>>),
     Call(Box<Call<'a>>),
     BinaryExpr(Box<BinaryExpr<'a>>),
+    UnaryExpr(Box<UnaryExpr<'a>>),
 }
 
 impl<'a> Node<'a> for Expr<'a> {
@@ -330,6 +351,7 @@ impl<'a> Node<'a> for Expr<'a> {
             Self::Identifier(ident) => vec![ident.as_node()],
             Self::Call(func) => vec![func.as_node()],
             Self::BinaryExpr(expr) => vec![expr.as_node()],
+            Self::UnaryExpr(expr) => vec![expr.as_node()],
         }
     }
 
@@ -340,6 +362,7 @@ impl<'a> Node<'a> for Expr<'a> {
             Self::Identifier(ident) => ident.span(),
             Self::Call(func) => func.span(),
             Self::BinaryExpr(expr) => expr.span(),
+            Self::UnaryExpr(expr) => expr.span(),
         }
     }
 }

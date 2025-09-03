@@ -25,6 +25,8 @@ fn test_sanity() {
     parse_no_errors("BEGIN { if ($x == 1) {} }");
     parse_no_errors("BEGIN { if ($x == 1) { return; } }");
     parse_no_errors("BEGIN { while ($x < $y) { return; } }");
+    parse_no_errors("BEGIN { @map = 1 + 2; $var = -1; $var = +2; $var2 = @map + -1; }");
+    parse_no_errors("BEGIN { $var++; --$var; }");
 
     // should fail
     // variable outside probe
