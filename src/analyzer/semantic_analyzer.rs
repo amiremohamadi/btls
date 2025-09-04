@@ -1,6 +1,6 @@
 use crate::builtins::BUILTINS;
 use crate::parser::{
-    Expr, Lvalue, Node, Preamble, Program, Statement, UndefinedFunc, UndefinedIdent, Walk,
+    Expr, Loop, Lvalue, Node, Preamble, Program, Statement, UndefinedFunc, UndefinedIdent, Walk,
     ast::parse,
 };
 use crate::server::Context;
@@ -59,6 +59,13 @@ impl SemanticAnalyzer {
             }
             if let Some(stmt) = n.as_statement() {
                 match stmt {
+                    Statement::Loop(x) => {
+                        if let Loop::For(x) = x.as_ref() {
+                            if let Expr::Identifier(ident) = x.lhs.as_ref() {
+                                variables.push(format!("${}", ident.name));
+                            }
+                        }
+                    }
                     Statement::Assignment(a) => match &a.lvalue {
                         Lvalue::Identifier(ident) => variables.push(format!("${}", ident.name)),
                     },
