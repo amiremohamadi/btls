@@ -421,6 +421,7 @@ impl<'a> Node<'a> for Assignment<'a> {
 #[derive(Debug)]
 pub enum Loop<'a> {
     While(Box<While<'a>>),
+    For(Box<For<'a>>),
 }
 
 impl<'a> Node<'a> for Loop<'a> {
@@ -431,12 +432,14 @@ impl<'a> Node<'a> for Loop<'a> {
     fn children(&self) -> Vec<&dyn Node<'a>> {
         match self {
             Self::While(w) => w.children(),
+            Self::For(f) => f.children(),
         }
     }
 
     fn span(&self) -> Span<'a> {
         match self {
             Self::While(w) => w.span(),
+            Self::For(f) => f.span(),
         }
     }
 }
@@ -455,6 +458,28 @@ impl<'a> Node<'a> for While<'a> {
 
     fn children(&self) -> Vec<&dyn Node<'a>> {
         vec![&*self.condition, &self.block]
+    }
+
+    fn span(&self) -> Span<'a> {
+        self.span
+    }
+}
+
+#[derive(Debug)]
+pub struct For<'a> {
+    pub lhs: Box<Expr<'a>>,
+    pub rhs: Box<Expr<'a>>,
+    pub block: Block<'a>,
+    pub span: Span<'a>,
+}
+
+impl<'a> Node<'a> for For<'a> {
+    fn as_node(&self) -> &dyn Node<'a> {
+        self
+    }
+
+    fn children(&self) -> Vec<&dyn Node<'a>> {
+        vec![&*self.lhs, &*self.rhs, &self.block]
     }
 
     fn span(&self) -> Span<'a> {

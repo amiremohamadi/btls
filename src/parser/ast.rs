@@ -7,9 +7,9 @@ use pest::{
 };
 
 use super::{
-    AssignOp, Assignment, BinaryExpr, Block, Call, ErrorPreamble, ErrorStatement, Expr, Identifier,
-    If, IntegerLiteral, Loop, Lvalue, Node, Preamble, Probe, Program, Statement, StringLiteral,
-    UnaryExpr, UnknownPreamble, UnknownStatement, UnmatchedBrace, While,
+    AssignOp, Assignment, BinaryExpr, Block, Call, ErrorPreamble, ErrorStatement, Expr, For,
+    Identifier, If, IntegerLiteral, Loop, Lvalue, Node, Preamble, Probe, Program, Statement,
+    StringLiteral, UnaryExpr, UnknownPreamble, UnknownStatement, UnmatchedBrace, While,
 };
 
 #[derive(pest_derive::Parser)]
@@ -230,6 +230,23 @@ fn convert_while(pair: Pair<Rule>) -> Loop {
     }))
 }
 
+fn convert_for(pair: Pair<Rule>) -> Loop {
+    assert!(matches!(pair.as_rule(), Rule::r#for));
+    let span = pair.as_span();
+    let mut pairs = pair.into_inner();
+
+    let lhs = convert_expr(pairs.next().unwrap());
+    let rhs = convert_expr(pairs.next().unwrap());
+    let block = convert_block(pairs.next().unwrap());
+
+    Loop::For(Box::new(For {
+        lhs: Box::new(lhs),
+        rhs: Box::new(rhs),
+        block,
+        span,
+    }))
+}
+
 fn convert_statement(pair: Pair<Rule>) -> Statement {
     assert!(matches!(pair.as_rule(), Rule::statement));
     let pair = pair.into_inner().exactly_one().unwrap();
@@ -237,6 +254,7 @@ fn convert_statement(pair: Pair<Rule>) -> Statement {
         Rule::assignment => Statement::Assignment(Box::new(convert_assignment(pair))),
         Rule::r#if => Statement::IfCond(Box::new(convert_if(pair))),
         Rule::r#while => Statement::Loop(Box::new(convert_while(pair))),
+        Rule::r#for => Statement::Loop(Box::new(convert_for(pair))),
         Rule::expr => Statement::Expr(Box::new(convert_expr(pair))),
         _ => unreachable!(),
     }
