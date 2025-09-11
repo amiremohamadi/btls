@@ -34,18 +34,19 @@ ne        =  { "!=" }
 and       =  { "&&" }
 or        =  { "||" }
 not       =  { "!" }
+// FIXME: parser misinterprets "add"/"sub" as prefix
+// using "neg"/"pos" as a temporary workaround
 neg       =  { "-" }
-// FIXME:
-pos = { "+" }
-// FIXME:
+pos       =  { "+" }
 
 assign_op  =  { "=" | "+=" | "-=" }
 assignment =  { variable ~ assign_op ~ expr }
 call       =  { identifier ~ "(" ~ expr_list ~ ")" }
 if         =  { "if" ~ "(" ~ expr ~ ")" ~ block }
 while      =  { "while" ~ "(" ~ expr ~ ")" ~ block }
+for        =  { "for" ~ "(" ~ expr ~ ":" ~ expr ~ ")" ~ block }
 base_stmt  = _{ assignment | expr }
-statement  =  { base_stmt ~ ";" | if | while }
+statement  =  { base_stmt ~ ";" | if | while | for }
 block      =  { "{" ~ (COMMENT | statement | error)* ~ "}" }
 
 attach_point      = { (identifier | ":" | "*")+ }
