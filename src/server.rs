@@ -55,7 +55,8 @@ impl LanguageServer for Backend {
         else {
             return Ok(None);
         };
-        super::completion_provider::completion(&self.context, &path).await
+        let pos = params.text_document_position.position;
+        super::completion_provider::completion(&self.context, &path, pos).await
     }
 
     async fn did_open(&self, params: DidOpenTextDocumentParams) {

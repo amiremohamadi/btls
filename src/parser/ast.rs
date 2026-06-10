@@ -8,8 +8,8 @@ use pest::{
 
 use super::{
     AssignOp, Assignment, BinaryExpr, Block, Call, ErrorPreamble, ErrorStatement, Expr, For,
-    Identifier, If, IntegerLiteral, Loop, Lvalue, Node, Preamble, Probe, Program, Statement,
-    StringLiteral, UnaryExpr, UnknownPreamble, UnknownStatement, UnmatchedBrace, While,
+    IdentKind, Identifier, If, IntegerLiteral, Loop, Lvalue, Node, Preamble, Probe, Program,
+    Statement, StringLiteral, UnaryExpr, UnknownPreamble, UnknownStatement, UnmatchedBrace, While,
 };
 
 #[derive(pest_derive::Parser)]
@@ -38,13 +38,22 @@ fn convert_ident(pair: Pair<Rule>) -> Identifier {
     Identifier {
         name: pair.as_str(),
         span: pair.as_span(),
+        kind: IdentKind::Bare,
     }
 }
 
 fn convert_var(pair: Pair<Rule>) -> Identifier {
     assert!(matches!(pair.as_rule(), Rule::variable));
+    let var_str = pair.as_str();
+    let kind = if var_str.starts_with('$') {
+        IdentKind::Scratch
+    } else {
+        IdentKind::Map
+    };
     let pair = pair.into_inner().exactly_one().unwrap();
-    convert_ident(pair)
+    let mut ident = convert_ident(pair);
+    ident.kind = kind;
+    ident
 }
 
 fn convert_var_expr(pair: Pair<Rule>) -> Expr {

@@ -1,10 +1,11 @@
+use super::analyzer::semantic_analyzer;
 use super::builtins::BUILTINS;
 use super::server::Context;
 use std::path::Path;
 use tower_lsp::jsonrpc::{Error, ErrorCode, Result};
 use tower_lsp::lsp_types::{
-    CompletionItem, CompletionItemKind, CompletionParams, CompletionResponse, Documentation,
-    MarkupContent, MarkupKind,
+    CompletionItem, CompletionItemKind, CompletionResponse, Documentation, MarkupContent,
+    MarkupKind, Position,
 };
 
 macro_rules! builtin_to_completion_item {
@@ -22,24 +23,29 @@ macro_rules! builtin_to_completion_item {
     };
 }
 
-pub async fn completion(context: &Context, path: &Path) -> Result<Option<CompletionResponse>> {
+pub async fn completion(
+    context: &Context,
+    path: &Path,
+    position: Position,
+) -> Result<Option<CompletionResponse>> {
     let mut analyzer = context.analyzer.lock().await;
-    let variables = match analyzer
+    let analyzed = analyzer
         .analyze(context, path)
         .await
-        .map_err(|_| Error::new(ErrorCode::InternalError))
-    {
-        Ok(f) => f
-            .variables
-            .iter()
-            .map(|x| CompletionItem {
-                label: x.to_string(),
-                kind: Some(CompletionItemKind::VARIABLE),
-                ..Default::default()
-            })
-            .collect(),
-        _ => Vec::new(),
+        .map_err(|_| Error::new(ErrorCode::InternalError))?;
+
+    let Some(offset) = analyzed.document.line_index.offset(position) else {
+        return Ok(None);
     };
+
+    let variables = semantic_analyzer::variables_at(&analyzed.ast, offset)
+        .into_iter()
+        .map(|x| CompletionItem {
+            label: x.to_string(),
+            kind: Some(CompletionItemKind::VARIABLE),
+            ..Default::default()
+        })
+        .collect::<Vec<_>>();
 
     let builtin_keywords =
         builtin_to_completion_item!(BUILTINS.keywords, CompletionItemKind::KEYWORD);

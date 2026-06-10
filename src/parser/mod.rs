@@ -201,10 +201,18 @@ impl<'a> Node<'a> for ErrorStatement<'a> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum IdentKind {
+    Bare,
+    Scratch,
+    Map,
+}
+
 #[derive(Debug)]
 pub struct Identifier<'a> {
     pub name: &'a str,
     pub span: Span<'a>,
+    pub kind: IdentKind,
 }
 
 impl<'a> Node<'a> for Identifier<'a> {
