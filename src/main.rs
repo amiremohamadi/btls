@@ -1,6 +1,7 @@
 mod analyzer;
 mod builtins;
 mod client;
+mod common;
 mod completion_provider;
 mod config;
 mod diagnostic_provider;

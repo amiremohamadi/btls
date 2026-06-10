@@ -66,7 +66,7 @@ impl LanguageServer for Backend {
             .storage
             .lock()
             .await
-            .load(&path, &params.text_document.text);
+            .load(&path, &params.text_document.text, params.text_document.version);
 
         super::diagnostic_provider::publish_diagnostics(&self.context, params.text_document.uri)
             .await;
@@ -79,7 +79,11 @@ impl LanguageServer for Backend {
         let Some(changes) = params.content_changes.first() else {
             return;
         };
-        self.context.storage.lock().await.load(&path, &changes.text);
+        self.context.storage.lock().await.load(
+            &path,
+            &changes.text,
+            params.text_document.version,
+        );
 
         super::diagnostic_provider::publish_diagnostics(&self.context, params.text_document.uri)
             .await;

@@ -1,12 +1,7 @@
 use super::parser::Node;
 use super::server::Context;
 use tower_lsp::jsonrpc::{Error, ErrorCode};
-use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, Position, Range, Url};
-
-fn to_position(content: &str, pos: usize) -> Position {
-    let (line, col) = pest::Position::new(content, pos).unwrap().line_col();
-    Position::new((line - 1) as _, (col - 1) as _)
-}
+use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity, Url};
 
 pub async fn publish_diagnostics(context: &Context, uri: Url) {
     let Ok(path) = uri.to_file_path() else {
@@ -28,17 +23,12 @@ pub async fn publish_diagnostics(context: &Context, uri: Url) {
         _ => return,
     };
 
-    let content = context.storage.lock().await.read(&path);
-
     let digs = analyzed_file
         .ast
         .as_node()
         .errors()
         .map(|e| Diagnostic {
-            range: Range::new(
-                to_position(&content, e.span().start()),
-                to_position(&content, e.span().end()),
-            ),
+            range: analyzed_file.document.line_index.range(e.span()),
             severity: Some(DiagnosticSeverity::ERROR),
             message: e.diagnosis(),
             ..Default::default()

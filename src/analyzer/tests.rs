@@ -37,7 +37,7 @@ async fn test_sanity() {
     let context = init_context();
     {
         let mut storage = context.storage.lock().await;
-        storage.load(path, prog);
+        storage.load(path, prog, 0);
     }
 
     let mut analyzer = context.analyzer.lock().await;

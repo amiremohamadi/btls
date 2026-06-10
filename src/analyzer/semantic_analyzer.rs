@@ -1,18 +1,21 @@
+use std::sync::Arc;
+
 use crate::builtins::BUILTINS;
 use crate::parser::{
     Expr, Loop, Lvalue, Node, Preamble, Program, Statement, UndefinedFunc, UndefinedIdent, Walk,
     ast::parse,
 };
 use crate::server::Context;
+use crate::storage::Document;
 use anyhow::Result;
 use std::path::Path;
 
 pub struct SemanticAnalyzer {
     pub content: String,
-    // pub variables: Vec<String>,
 }
 
 pub struct AnalyzedFile<'a> {
+    pub document: Arc<Document>,
     pub variables: Vec<String>,
     pub ast: Program<'a>,
 }
@@ -24,9 +27,9 @@ impl SemanticAnalyzer {
         }
     }
 
-    pub async fn analyze(&mut self, context: &Context, path: &Path) -> Result<AnalyzedFile> {
-        // self.content = std::fs::read_to_string(path).unwrap();
-        self.content = context.storage.lock().await.read(path);
+    pub async fn analyze(&mut self, context: &Context, path: &Path) -> Result<AnalyzedFile<'_>> {
+        let document = context.storage.lock().await.read(path);
+        self.content = (*document.data).clone();
         let mut ast = parse(&self.content)?;
         let mut variables = vec![];
         let mut errors = vec![];
@@ -85,6 +88,10 @@ impl SemanticAnalyzer {
             .next()
             .map(|x| x.statements.extend(errors));
 
-        Ok(AnalyzedFile { ast, variables })
+        Ok(AnalyzedFile {
+            document,
+            ast,
+            variables,
+        })
     }
 }
