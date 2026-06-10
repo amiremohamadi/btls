@@ -227,7 +227,6 @@ fn check_block<'a>(
             }
             Statement::Loop(loop_stmt) => match loop_stmt.as_ref() {
                 Loop::For(for_loop) => {
-                    check_expr(&for_loop.lhs, scope, global_maps, errors);
                     check_expr(&for_loop.rhs, scope, global_maps, errors);
                     if let Expr::Identifier(ident) = for_loop.lhs.as_ref() {
                         if ident.kind != IdentKind::Map {
