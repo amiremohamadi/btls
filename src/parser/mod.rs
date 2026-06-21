@@ -313,8 +313,18 @@ impl<'a> Node<'a> for BinaryExpr<'a> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum UnaryOp {
+    Plus,
+    Minus,
+    Not,
+    Inc,
+    Dec,
+}
+
 #[derive(Debug)]
 pub struct UnaryExpr<'a> {
+    pub op: UnaryOp,
     pub expr: Box<Expr<'a>>,
     pub span: Span<'a>,
 }

@@ -11,16 +11,18 @@ primary   =  {
   | number
   | call
   | identifier
-  | var_expr
+  | variable
 }
 variable  =  { "$" ~ identifier | "@" ~ identifier? }
-var_expr  =  { (inc ~ dec)* ~ variable ~ (inc | dec)* }
-expr      =  { prefix* ~ primary ~ (infix ~ (prefix* ~ primary))* }
+expr      =  { prefix* ~ primary ~ postfix* ~ (infix ~ prefix* ~ primary ~ postfix*)* }
 expr_list =  { (expr ~ ("," ~ expr)*)? }
 infix     = _{ add | sub | mul | div | le | lt | ge | gt | eq | ne | and | or }
-prefix    = _{ not | neg | pos }
-inc       =  { "++" }
-dec       =  { "--" }
+prefix    = _{ not | inc_prefix | dec_prefix | neg | pos }
+postfix   = _{ inc_postfix | dec_postfix }
+inc_prefix    =  { "++" }
+inc_postfix   =  { "++" }
+dec_prefix    =  { "--" }
+dec_postfix   =  { "--" }
 add       =  { "+" }
 sub       =  { "-" }
 mul       =  { "*" }

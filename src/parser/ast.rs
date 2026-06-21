@@ -9,7 +9,8 @@ use pest::{
 use super::{
     AssignOp, Assignment, BinaryExpr, Block, Call, ErrorPreamble, ErrorStatement, Expr, For,
     IdentKind, Identifier, If, IntegerLiteral, Loop, Lvalue, Node, Preamble, Probe, Program,
-    Statement, StringLiteral, UnaryExpr, UnknownPreamble, UnknownStatement, UnmatchedBrace, While,
+    Statement, StringLiteral, UnaryExpr, UnaryOp, UnknownPreamble, UnknownStatement,
+    UnmatchedBrace, While,
 };
 
 #[derive(pest_derive::Parser)]
@@ -65,44 +66,6 @@ fn convert_var(pair: Pair<Rule>) -> Identifier {
     }
 }
 
-fn convert_var_expr(pair: Pair<Rule>) -> Expr {
-    assert!(matches!(pair.as_rule(), Rule::var_expr));
-
-    let pairs = pair.into_inner();
-
-    let parser = PrattParser::new()
-        .op(Op::prefix(Rule::dec) | Op::prefix(Rule::inc))
-        .op(Op::postfix(Rule::dec) | Op::postfix(Rule::inc));
-
-    parser
-        .map_primary(|p| Expr::Identifier(Box::new(convert_var(p))))
-        .map_prefix(|op, rhs| {
-            let span = Span::new(
-                op.as_span().get_input(),
-                op.as_span().start(),
-                rhs.span().end(),
-            )
-            .unwrap();
-            Expr::UnaryExpr(Box::new(UnaryExpr {
-                expr: Box::new(rhs),
-                span,
-            }))
-        })
-        .map_postfix(|lhs, op| {
-            let span = Span::new(
-                lhs.span().get_input(),
-                lhs.span().start(),
-                op.as_span().end(),
-            )
-            .unwrap();
-            Expr::UnaryExpr(Box::new(UnaryExpr {
-                expr: Box::new(lhs),
-                span,
-            }))
-        })
-        .parse(pairs)
-}
-
 fn convert_assign_op(pair: Pair<Rule>) -> AssignOp {
     assert!(matches!(pair.as_rule(), Rule::assign_op));
     match pair.as_str() {
@@ -136,7 +99,18 @@ fn convert_primary_expr(pair: Pair<Rule>) -> Expr {
         Rule::number => Expr::Integer(Box::new(convert_int(pair))),
         Rule::string => Expr::String(Box::new(convert_str(pair))),
         Rule::call => Expr::Call(Box::new(convert_call(pair))),
-        Rule::var_expr => convert_var_expr(pair),
+        Rule::variable => Expr::Identifier(Box::new(convert_var(pair))),
+        _ => unreachable!(),
+    }
+}
+
+fn convert_unary_op(op: &Pair<Rule>) -> UnaryOp {
+    match op.as_rule() {
+        Rule::not => UnaryOp::Not,
+        Rule::neg => UnaryOp::Minus,
+        Rule::pos => UnaryOp::Plus,
+        Rule::inc_prefix | Rule::inc_postfix => UnaryOp::Inc,
+        Rule::dec_prefix | Rule::dec_postfix => UnaryOp::Dec,
         _ => unreachable!(),
     }
 }
@@ -146,18 +120,23 @@ fn convert_expr(pair: Pair<Rule>) -> Expr {
     let pairs = pair.into_inner();
 
     let parser = PrattParser::new()
-        .op(Op::prefix(Rule::not) | Op::prefix(Rule::neg) | Op::prefix(Rule::pos))
-        .op(Op::infix(Rule::add, Assoc::Left)
-            | Op::infix(Rule::sub, Assoc::Left)
-            | Op::infix(Rule::mul, Assoc::Left)
-            | Op::infix(Rule::div, Assoc::Left))
+        .op(Op::infix(Rule::and, Assoc::Left) | Op::infix(Rule::or, Assoc::Left))
         .op(Op::infix(Rule::ge, Assoc::Left)
             | Op::infix(Rule::gt, Assoc::Left)
             | Op::infix(Rule::le, Assoc::Left)
             | Op::infix(Rule::lt, Assoc::Left)
             | Op::infix(Rule::eq, Assoc::Left)
             | Op::infix(Rule::ne, Assoc::Left))
-        .op(Op::infix(Rule::and, Assoc::Left) | Op::infix(Rule::or, Assoc::Left));
+        .op(Op::infix(Rule::add, Assoc::Left)
+            | Op::infix(Rule::sub, Assoc::Left)
+            | Op::infix(Rule::mul, Assoc::Left)
+            | Op::infix(Rule::div, Assoc::Left))
+        .op(Op::prefix(Rule::not)
+            | Op::prefix(Rule::neg)
+            | Op::prefix(Rule::pos)
+            | Op::prefix(Rule::inc_prefix)
+            | Op::prefix(Rule::dec_prefix))
+        .op(Op::postfix(Rule::inc_postfix) | Op::postfix(Rule::dec_postfix));
 
     parser
         .map_primary(|p| convert_primary_expr(p))
@@ -169,7 +148,21 @@ fn convert_expr(pair: Pair<Rule>) -> Expr {
             )
             .unwrap();
             Expr::UnaryExpr(Box::new(UnaryExpr {
+                op: convert_unary_op(&op),
                 expr: Box::new(rhs),
+                span,
+            }))
+        })
+        .map_postfix(|lhs, op| {
+            let span = Span::new(
+                lhs.span().get_input(),
+                lhs.span().start(),
+                op.as_span().end(),
+            )
+            .unwrap();
+            Expr::UnaryExpr(Box::new(UnaryExpr {
+                op: convert_unary_op(&op),
+                expr: Box::new(lhs),
                 span,
             }))
         })

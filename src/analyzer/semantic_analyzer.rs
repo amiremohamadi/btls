@@ -4,7 +4,7 @@ use crate::builtins::BUILTINS;
 use crate::common::utils::OwnedLineIndex;
 use crate::parser::{
     Block, Expr, IdentKind, Loop, Lvalue, Node, Preamble, Probe, Program, Statement, UndefinedFunc,
-    UndefinedIdent,
+    UndefinedIdent, UnaryOp,
 };
 use crate::server::Context;
 use crate::storage::Document;
@@ -125,7 +125,24 @@ fn collect_maps_in_block(block: &Block, maps: &mut Vec<RawVar>) {
             Statement::IfCond(if_cond) => {
                 collect_maps_in_block(&if_cond.block, maps);
             }
-            Statement::Expr(_) | Statement::Error(_) => {}
+            Statement::Expr(expr) => {
+                if let Expr::UnaryExpr(unary) = expr.as_ref() {
+                    if matches!(unary.op, UnaryOp::Inc | UnaryOp::Dec) {
+                        if let Expr::Identifier(ident) = unary.expr.as_ref() {
+                            if ident.kind == IdentKind::Map {
+                                maps.push((
+                                    format!("@{}", ident.name),
+                                    VarLoc {
+                                        offset: unary.span.start(),
+                                        text: unary.span.as_str().to_string(),
+                                    },
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+            Statement::Error(_) => {}
         }
     }
 }
@@ -203,7 +220,24 @@ fn collect_vars_in_block(block: &Block, offset: usize, vars: &mut Vec<RawVar>) {
                     collect_vars_in_block(&if_cond.block, offset, vars);
                 }
             }
-            Statement::Expr(_) | Statement::Error(_) => {}
+            Statement::Expr(expr) => {
+                if let Expr::UnaryExpr(unary) = expr.as_ref() {
+                    if matches!(unary.op, UnaryOp::Inc | UnaryOp::Dec) {
+                        if let Expr::Identifier(ident) = unary.expr.as_ref() {
+                            if ident.kind != IdentKind::Map {
+                                vars.push((
+                                    format!("{}{}", var_prefix(ident.kind), ident.name),
+                                    VarLoc {
+                                        offset: unary.span.start(),
+                                        text: unary.span.as_str().to_string(),
+                                    },
+                                ));
+                            }
+                        }
+                    }
+                }
+            }
+            Statement::Error(_) => {}
         }
     }
 }
@@ -263,7 +297,20 @@ impl SemanticAnalyzer {
                 Statement::IfCond(if_cond) => {
                     Self::walk_vars_in_block(&if_cond.block, variables);
                 }
-                Statement::Error(_) | Statement::Expr(_) => {}
+                Statement::Expr(expr) => {
+                    if let Expr::UnaryExpr(unary) = expr.as_ref() {
+                        if matches!(unary.op, UnaryOp::Inc | UnaryOp::Dec) {
+                            if let Expr::Identifier(ident) = unary.expr.as_ref() {
+                                variables.push(format!(
+                                    "{}{}",
+                                    var_prefix(ident.kind),
+                                    ident.name
+                                ));
+                            }
+                        }
+                    }
+                }
+                Statement::Error(_) => {}
             }
         }
     }

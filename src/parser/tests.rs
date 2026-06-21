@@ -28,6 +28,7 @@ fn test_sanity() {
     parse_no_errors("BEGIN { for ($x : $y) { $var += 1; } }");
     parse_no_errors("BEGIN { @map = 1 + 2; $var = -1; $var = +2; $var2 = @map + -1; }");
     parse_no_errors("BEGIN { $var++; --$var; }");
+    parse_no_errors("BEGIN { $x++; ++$x; $x--; --$x; @map++; ++@map; }");
 
     // should fail
     // variable outside probe
