@@ -22,6 +22,17 @@ fn init_context() -> Context {
     }
 }
 
+macro_rules! assert_diag_msg {
+    ($diag:expr, $sub:literal) => {
+        assert!(
+            $diag.message.contains($sub),
+            "expected diag containing {:?}, got: {:?}",
+            $sub,
+            $diag.message,
+        );
+    };
+}
+
 #[tokio::test]
 async fn test_sanity() {
     let prog = r#"
@@ -40,18 +51,12 @@ async fn test_sanity() {
         storage.load(path, prog, 0);
     }
 
-    let mut analyzer = context.analyzer.lock().await;
+    let analyzer = context.analyzer.lock().await;
     let analyzed = analyzer.analyze(&context, path).await.unwrap();
     assert_eq!(analyzed.variables.len(), 3);
 
-    let errors = analyzed.ast.errors().collect::<Vec<_>>();
+    let errors = analyzed.diagnostics();
     assert_eq!(errors.len(), 3);
-    assert!(matches!(
-        errors[1],
-        ErrorRef::Statement(ErrorStatement::UndefinedIdent(..))
-    ));
-    assert!(matches!(
-        errors[2],
-        ErrorRef::Statement(ErrorStatement::UndefinedFunc(..))
-    ));
+    assert_diag_msg!(errors[1], "Undefined Identifier");
+    assert_diag_msg!(errors[2], "Undefined function");
 }

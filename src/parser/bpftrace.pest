@@ -13,7 +13,7 @@ primary   =  {
   | identifier
   | var_expr
 }
-variable  =  { ("$" | "@") ~ identifier }
+variable  =  { "$" ~ identifier | "@" ~ identifier? }
 var_expr  =  { (inc ~ dec)* ~ variable ~ (inc | dec)* }
 expr      =  { prefix* ~ primary ~ (infix ~ (prefix* ~ primary))* }
 expr_list =  { (expr ~ ("," ~ expr)*)? }

@@ -50,10 +50,19 @@ fn convert_var(pair: Pair<Rule>) -> Identifier {
     } else {
         IdentKind::Map
     };
-    let pair = pair.into_inner().exactly_one().unwrap();
-    let mut ident = convert_ident(pair);
-    ident.kind = kind;
-    ident
+    let span = pair.as_span();
+    match pair.into_inner().next() {
+        Some(inner) => {
+            let mut ident = convert_ident(inner);
+            ident.kind = kind;
+            ident
+        }
+        None => Identifier {
+            name: "",
+            span,
+            kind,
+        },
+    }
 }
 
 fn convert_var_expr(pair: Pair<Rule>) -> Expr {
