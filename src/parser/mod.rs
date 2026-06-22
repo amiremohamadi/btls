@@ -658,6 +658,7 @@ impl<'a> Node<'a> for ErrorPreamble<'a> {
 #[derive(Debug)]
 pub enum Preamble<'a> {
     Probe(Probe<'a>),
+    CDef(Box<CDef<'a>>),
     Error(Box<ErrorPreamble<'a>>),
 }
 
@@ -669,6 +670,7 @@ impl<'a> Node<'a> for Preamble<'a> {
     fn children(&self) -> Vec<&dyn Node<'a>> {
         match self {
             Self::Probe(p) => p.children(),
+            Self::CDef(c) => vec![c.as_node()],
             Self::Error(e) => vec![e.as_node()],
         }
     }
@@ -676,8 +678,76 @@ impl<'a> Node<'a> for Preamble<'a> {
     fn span(&self) -> Span<'a> {
         match self {
             Self::Probe(p) => p.span(),
+            Self::CDef(c) => c.span(),
             Self::Error(e) => e.span(),
         }
+    }
+}
+
+#[derive(Debug)]
+pub enum CDef<'a> {
+    Include(Box<Include<'a>>),
+    Define(Box<Define<'a>>),
+}
+
+impl<'a> Node<'a> for CDef<'a> {
+    fn as_node(&self) -> &dyn Node<'a> {
+        self
+    }
+
+    fn children(&self) -> Vec<&dyn Node<'a>> {
+        match self {
+            Self::Include(i) => vec![i.as_node()],
+            Self::Define(d) => vec![d.as_node()],
+        }
+    }
+
+    fn span(&self) -> Span<'a> {
+        match self {
+            Self::Include(i) => i.span(),
+            Self::Define(d) => d.span(),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Include<'a> {
+    pub path: &'a str,
+    pub span: Span<'a>,
+}
+
+impl<'a> Node<'a> for Include<'a> {
+    fn as_node(&self) -> &dyn Node<'a> {
+        self
+    }
+
+    fn children(&self) -> Vec<&dyn Node<'a>> {
+        Vec::new()
+    }
+
+    fn span(&self) -> Span<'a> {
+        self.span
+    }
+}
+
+#[derive(Debug)]
+pub struct Define<'a> {
+    pub name: Identifier<'a>,
+    pub body: Option<&'a str>,
+    pub span: Span<'a>,
+}
+
+impl<'a> Node<'a> for Define<'a> {
+    fn as_node(&self) -> &dyn Node<'a> {
+        self
+    }
+
+    fn children(&self) -> Vec<&dyn Node<'a>> {
+        vec![self.name.as_node()]
+    }
+
+    fn span(&self) -> Span<'a> {
+        self.span
     }
 }
 

@@ -9,6 +9,14 @@ fn parse_no_errors(input: &str) {
     assert!(errors.is_empty(), "parse failed!");
 }
 
+fn parse_has_errors(input: &str) {
+    let prog = parse(input).unwrap();
+    assert!(
+        prog.errors().next().is_some(),
+        "expected a parse error but got none for {input:?}"
+    );
+}
+
 #[test]
 fn test_sanity() {
     parse_no_errors("");
@@ -30,7 +38,16 @@ fn test_sanity() {
     parse_no_errors("BEGIN { $var++; --$var; }");
     parse_no_errors("BEGIN { $x++; ++$x; $x--; --$x; @map++; ++@map; }");
 
-    // should fail
+    parse_no_errors("#include <linux/sched.h>");
+    parse_no_errors("#define MAX 100");
+    parse_no_errors("#define FLAG");
+    parse_no_errors("#include <linux/sched.h>\n#define MAX 100\nBEGIN { $x = MAX; }");
+
+    parse_has_errors("#define ADD(a, b) ((a) + (b))");
+    parse_has_errors("chertopert");
+    parse_has_errors("12313");
+    parse_has_errors("s\n12313\nBEGIN { @c = 0; }");
+
     // variable outside probe
     let prog = parse("$x = 1").unwrap();
     assert!(

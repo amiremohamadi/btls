@@ -7,10 +7,10 @@ use pest::{
 };
 
 use super::{
-    AssignOp, Assignment, BinaryExpr, Block, Call, ErrorPreamble, ErrorStatement, Expr, For,
-    IdentKind, Identifier, If, IntegerLiteral, Loop, Lvalue, Node, Preamble, Probe, Program,
-    Statement, StringLiteral, UnaryExpr, UnaryOp, UnknownPreamble, UnknownStatement,
-    UnmatchedBrace, While,
+    AssignOp, Assignment, BinaryExpr, Block, CDef, Call, Define, ErrorPreamble, ErrorStatement,
+    Expr, For, IdentKind, Identifier, If, Include, IntegerLiteral, Loop, Lvalue, Node, Preamble,
+    Probe, Program, Statement, StringLiteral, UnaryExpr, UnaryOp, UnknownPreamble,
+    UnknownStatement, UnmatchedBrace, While,
 };
 
 #[derive(pest_derive::Parser)]
@@ -332,11 +332,47 @@ fn convert_probe(pair: Pair<Rule>) -> Probe {
     }
 }
 
+fn convert_include(pair: Pair<Rule>) -> Include {
+    assert!(matches!(pair.as_rule(), Rule::include));
+    let span = pair.as_span();
+    let path = pair.into_inner().exactly_one().unwrap();
+    Include {
+        path: path.as_str(),
+        span,
+    }
+}
+
+fn convert_define(pair: Pair<Rule>) -> Define {
+    assert!(matches!(pair.as_rule(), Rule::define));
+    let span = pair.as_span();
+    let mut pairs = pair.into_inner();
+    let name_pair = pairs.next().unwrap();
+    assert!(matches!(name_pair.as_rule(), Rule::identifier));
+    let name = Identifier {
+        name: name_pair.as_str(),
+        span: name_pair.as_span(),
+        kind: IdentKind::Bare,
+    };
+    let body = pairs.next().map(|p| p.as_str());
+    Define { name, body, span }
+}
+
+fn convert_cdef(pair: Pair<Rule>) -> CDef {
+    assert!(matches!(pair.as_rule(), Rule::cdef));
+    let pair = pair.into_inner().exactly_one().unwrap();
+    match pair.as_rule() {
+        Rule::include => CDef::Include(Box::new(convert_include(pair))),
+        Rule::define => CDef::Define(Box::new(convert_define(pair))),
+        _ => unreachable!(),
+    }
+}
+
 fn convert_preamble(pair: Pair<Rule>) -> Preamble {
     assert!(matches!(pair.as_rule(), Rule::preamble));
     let pair = pair.into_inner().exactly_one().unwrap();
     match pair.as_rule() {
         Rule::probe => Preamble::Probe(convert_probe(pair)),
+        Rule::cdef => Preamble::CDef(Box::new(convert_cdef(pair))),
         _ => unreachable!(),
     }
 }

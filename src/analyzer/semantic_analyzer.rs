@@ -3,8 +3,8 @@ use std::sync::Arc;
 use crate::builtins::BUILTINS;
 use crate::common::utils::OwnedLineIndex;
 use crate::parser::{
-    Block, Expr, IdentKind, Loop, Lvalue, Node, Preamble, Probe, Program, Statement, UndefinedFunc,
-    UndefinedIdent, UnaryOp,
+    Block, Expr, IdentKind, Loop, Lvalue, Node, Preamble, Probe, Program, Statement, UnaryOp,
+    UndefinedFunc, UndefinedIdent,
 };
 use crate::server::Context;
 use crate::storage::Document;
@@ -48,7 +48,11 @@ impl VarInfo {
         }
     }
 
-    pub fn documentation(&self, line_index: &OwnedLineIndex, file_uri: &tower_lsp::lsp_types::Url) -> String {
+    pub fn documentation(
+        &self,
+        line_index: &OwnedLineIndex,
+        file_uri: &tower_lsp::lsp_types::Url,
+    ) -> String {
         let pos = line_index.position(self.defined_at());
         let (line, col) = (pos.line + 1, pos.character + 1);
         if self.locs.len() == 1 {
@@ -64,8 +68,7 @@ impl VarInfo {
 type RawVar = (String, VarLoc);
 
 fn merge_vars(raw: Vec<RawVar>) -> Vec<VarInfo> {
-    let mut map: std::collections::HashMap<String, Vec<VarLoc>> =
-        std::collections::HashMap::new();
+    let mut map: std::collections::HashMap<String, Vec<VarLoc>> = std::collections::HashMap::new();
     for (name, loc) in raw {
         map.entry(name).or_default().push(loc);
     }
@@ -82,6 +85,7 @@ fn collect_global_maps(program: &Program) -> Vec<RawVar> {
     for preamble in &program.preambles {
         match preamble {
             Preamble::Probe(probe) => collect_maps_in_block(&probe.block, &mut maps),
+            Preamble::CDef(_) => {}
             Preamble::Error(_) => {}
         }
     }
@@ -166,6 +170,7 @@ fn collect_vars_in_preamble(preamble: &Preamble, offset: usize, vars: &mut Vec<R
         Preamble::Probe(probe) => {
             collect_vars_in_block(&probe.block, offset, vars);
         }
+        Preamble::CDef(_) => {}
         Preamble::Error(_) => {}
     }
 }
@@ -301,11 +306,7 @@ impl SemanticAnalyzer {
                     if let Expr::UnaryExpr(unary) = expr.as_ref() {
                         if matches!(unary.op, UnaryOp::Inc | UnaryOp::Dec) {
                             if let Expr::Identifier(ident) = unary.expr.as_ref() {
-                                variables.push(format!(
-                                    "{}{}",
-                                    var_prefix(ident.kind),
-                                    ident.name
-                                ));
+                                variables.push(format!("{}{}", var_prefix(ident.kind), ident.name));
                             }
                         }
                     }
@@ -326,6 +327,7 @@ impl SemanticAnalyzer {
                 Preamble::Probe(probe) => {
                     Self::check_probe_errors(probe, global_maps, &mut errors, line_index);
                 }
+                Preamble::CDef(_) => {}
                 Preamble::Error(e) => {
                     errors.push(Diagnostic {
                         range: line_index.range(e.span()),
@@ -339,11 +341,7 @@ impl SemanticAnalyzer {
         errors
     }
 
-    fn emit_diag(
-        stmt: &Statement,
-        line_index: &OwnedLineIndex,
-        out: &mut Vec<Diagnostic>,
-    ) {
+    fn emit_diag(stmt: &Statement, line_index: &OwnedLineIndex, out: &mut Vec<Diagnostic>) {
         if let Statement::Error(e) = stmt {
             out.push(Diagnostic {
                 range: line_index.range(e.span()),
@@ -402,13 +400,7 @@ impl SemanticAnalyzer {
                         );
                     }
                     Loop::While(w) => {
-                        Self::check_expr_errors(
-                            &w.condition,
-                            scope,
-                            global_maps,
-                            out,
-                            line_index,
-                        );
+                        Self::check_expr_errors(&w.condition, scope, global_maps, out, line_index);
                         let mut inner = scope.clone();
                         Self::check_block_errors(
                             &w.block,

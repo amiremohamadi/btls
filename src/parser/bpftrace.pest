@@ -1,4 +1,5 @@
 WHITESPACE = _{ (" " | "\t" | "\r" | "\n")+ }
+SPACE      = _{ " " | "\t" }
 COMMENT    = _{ "//" ~ (!NEWLINE ~ ANY)* ~ NEWLINE? }
 NEWLINE    = _{ "\r\n" | "\n" }
 
@@ -36,8 +37,6 @@ ne        =  { "!=" }
 and       =  { "&&" }
 or        =  { "||" }
 not       =  { "!" }
-// FIXME: parser misinterprets "add"/"sub" as prefix
-// using "neg"/"pos" as a temporary workaround
 neg       =  { "-" }
 pos       =  { "+" }
 
@@ -51,11 +50,18 @@ base_stmt  = _{ assignment | expr }
 statement  =  { base_stmt ~ ";" | if | while | for }
 block      =  { "{" ~ (COMMENT | statement | error)* ~ "}" }
 
-attach_point      = { (identifier | ":" | "*")+ }
+attach_point      = @{ (identifier | ":" | "*")+ }
 attach_point_list = { attach_point ~ ("," ~ attach_point)* }
 probe_condition   = { "/" ~ expr ~ "/" }
 probe             = { attach_point_list ~ probe_condition? ~ block }
-preamble          = { probe }
+
+cdef         = { include | define }
+include      = ${ "#include" ~ SPACE+ ~ include_path }
+include_path = @{ "<" ~ (!(">" | NEWLINE) ~ ANY)* ~ ">" }
+define       = ${ "#define" ~ SPACE+ ~ identifier ~ (SPACE+ ~ define_body)? }
+define_body  = @{ (!NEWLINE ~ ANY)+ }
+
+preamble          = { probe | cdef }
 
 error        =  { rest_of_line }
 rest_of_line = @{ (!(NEWLINE | "}") ~ ANY)+ ~ NEWLINE? }

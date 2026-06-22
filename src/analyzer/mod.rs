@@ -3,8 +3,8 @@ mod tests;
 
 use std::sync::Arc;
 
-use self_cell::self_cell;
 use crate::parser::Program;
+use self_cell::self_cell;
 
 self_cell!(
     struct OwnedAstCell {
