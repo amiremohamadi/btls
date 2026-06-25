@@ -74,6 +74,89 @@ def export_symbols(field, symbols, target):
     print('\t],', file=target)
 
 
+def _get_bpftrace_language_docs():
+    url = 'https://raw.githubusercontent.com/bpftrace/bpftrace/efb8d0d8876295f77170ec9a3c65101d8749f8db/docs/language.md'
+    r = subprocess.run(['curl', '-sSl', url], capture_output=True, text=True)
+    return r.stdout
+
+
+def _parse_config_vars(content):
+    section = re.search(
+        r'^## Config Variables\n(.*?)(?=\n## |\Z)',
+        content,
+        re.MULTILINE | re.DOTALL,
+    )
+    if not section:
+        return []
+    section = section.group(1)
+
+    vars = []
+    for m in re.finditer(
+        r'^### (\w+)\n(.*?)(?=\n### |\Z)',
+        section,
+        re.MULTILINE | re.DOTALL,
+    ):
+        name = m.group(1)
+        body = m.group(2).strip()
+
+        default_m = re.search(r'^Default:\s*(.+?)$', body, re.MULTILINE)
+        default = default_m.group(1).strip().strip('`').strip('"') if default_m else ''
+
+        values = []
+        for vm in re.finditer(
+            r'^[-*]\s+`?(\S+?)`?(?:\s*[:-]\s.*)?$',
+            body,
+            re.MULTILINE,
+        ):
+            val = vm.group(1)
+            if val not in values:
+                values.append(val)
+
+        # build detail string
+        if values:
+            detail = ' | '.join(values)
+            if default and default in values:
+                detail += f' (default: {default})'
+        elif default in ('true', 'false'):
+            detail = f'bool (default: {default})'
+            values = ['true', 'false']
+        elif default.isdigit():
+            detail = f'number (default: {default})'
+        elif default:
+            detail = f'string (default: "{default}")'
+        else:
+            inline = re.search(r"defaults to `(\w+)`", body)
+            if inline:
+                val = inline.group(1)
+                detail = f'bool (default: {val})'
+                values = ['true', 'false']
+            else:
+                detail = ''
+
+        vars.append({'name': name, 'detail': detail, 'documentation': body, 'values': values})
+
+    return vars
+
+
+def export_config_var(var, target):
+    print('\t\tConfigVar {', file=target)
+    print('\t\t\tname: "{}",'.format(var['name']), file=target)
+    print('\t\t\tdetail: r#"{}"#,'.format(var['detail']), file=target)
+    print('\t\t\tdocumentation: r#"{}"#,'.format(var['documentation']), file=target)
+    print('\t\t\tvalues: &[', file=target)
+    for val in var['values']:
+        print('\t\t\t\t"{}",'.format(val), file=target)
+    print('\t\t\t],', file=target)
+    print('\t\t},', file=target)
+
+
+def export_config_vars(field, vars, target):
+    print('\t{}: &['.format(field), file=target)
+    for var in vars:
+        export_config_var(var, target)
+    print('\t],', file=target)
+
+
 def generate_builtins():
     content = _get_bpftrace_stdlib_docs()
     markdown = mistune.create_markdown(renderer=mistune.AstRenderer(),
@@ -82,12 +165,16 @@ def generate_builtins():
     builtin_vars = _parse_vars_table(ast)
     builtin_funcs = _parse_functions_docs(content)
 
+    lang_content = _get_bpftrace_language_docs()
+    config_vars = _parse_config_vars(lang_content)
+
     with open('./target/builtins.gen.rs', 'w') as target:
         print('// DO NOT EDIT -- this file is auto generated\n',
               file=target)
         print('BuiltinSymbols {', file=target)
         export_symbols('keywords', builtin_vars, target)
         export_symbols('functions', builtin_funcs, target)
+        export_config_vars('config_vars', config_vars, target)
         print('}', file=target)
 
 

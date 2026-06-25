@@ -104,8 +104,7 @@ fn collect_global_maps(program: &Program) -> Vec<RawVar> {
     for preamble in &program.preambles {
         match preamble {
             Preamble::Probe(probe) => collect_maps_in_block(&probe.block, &mut maps),
-            Preamble::CDef(_) => {}
-            Preamble::Error(_) => {}
+            Preamble::CDef(_) | Preamble::Config(_) | Preamble::Error(_) => {}
         }
     }
     maps
@@ -190,8 +189,7 @@ fn collect_vars_in_preamble(preamble: &Preamble, offset: usize, vars: &mut Vec<R
         Preamble::Probe(probe) => {
             collect_vars_in_block(&probe.block, offset, vars);
         }
-        Preamble::CDef(_) => {}
-        Preamble::Error(_) => {}
+        Preamble::CDef(_) | Preamble::Config(_) | Preamble::Error(_) => {}
     }
 }
 
@@ -279,7 +277,7 @@ impl ErrorChecker<'_> {
         for preamble in &program.preambles {
             match preamble {
                 Preamble::Probe(probe) => self.check_probe(probe),
-                Preamble::CDef(_) => {}
+                Preamble::CDef(_) | Preamble::Config(_) => {}
                 Preamble::Error(e) => self.push_span_error(e.span(), e.diagnosis()),
             }
         }
