@@ -276,6 +276,7 @@ impl<'a> Node<'a> for IntegerLiteral<'a> {
 #[derive(Debug)]
 pub enum Lvalue<'a> {
     Identifier(Box<Identifier<'a>>),
+    MapAccess(Box<MapAccess<'a>>),
 }
 
 impl<'a> Node<'a> for Lvalue<'a> {
@@ -286,13 +287,38 @@ impl<'a> Node<'a> for Lvalue<'a> {
     fn children(&self) -> Vec<&dyn Node<'a>> {
         match self {
             Self::Identifier(ident) => vec![ident.as_node()],
+            Self::MapAccess(access) => access.children(),
         }
     }
 
     fn span(&self) -> Span<'a> {
         match self {
             Self::Identifier(ident) => ident.span(),
+            Self::MapAccess(access) => access.span,
         }
+    }
+}
+
+#[derive(Debug)]
+pub struct MapAccess<'a> {
+    pub map: Identifier<'a>,
+    pub keys: Vec<Expr<'a>>,
+    pub span: Span<'a>,
+}
+
+impl<'a> Node<'a> for MapAccess<'a> {
+    fn as_node(&self) -> &dyn Node<'a> {
+        self
+    }
+
+    fn children(&self) -> Vec<&dyn Node<'a>> {
+        let mut children: Vec<&dyn Node> = vec![&self.map];
+        children.extend(self.keys.iter().map(|k| k.as_node()));
+        children
+    }
+
+    fn span(&self) -> Span<'a> {
+        self.span
     }
 }
 
@@ -355,6 +381,7 @@ pub enum Expr<'a> {
     Call(Box<Call<'a>>),
     BinaryExpr(Box<BinaryExpr<'a>>),
     UnaryExpr(Box<UnaryExpr<'a>>),
+    MapAccess(Box<MapAccess<'a>>),
 }
 
 impl<'a> Node<'a> for Expr<'a> {
@@ -374,6 +401,7 @@ impl<'a> Node<'a> for Expr<'a> {
             Self::Call(func) => vec![func.as_node()],
             Self::BinaryExpr(expr) => vec![expr.as_node()],
             Self::UnaryExpr(expr) => vec![expr.as_node()],
+            Self::MapAccess(access) => access.children(),
         }
     }
 
@@ -385,6 +413,7 @@ impl<'a> Node<'a> for Expr<'a> {
             Self::Call(func) => func.span(),
             Self::BinaryExpr(expr) => expr.span(),
             Self::UnaryExpr(expr) => expr.span(),
+            Self::MapAccess(access) => access.span,
         }
     }
 }

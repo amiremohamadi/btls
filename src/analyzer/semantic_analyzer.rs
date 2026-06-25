@@ -114,30 +114,33 @@ fn collect_maps_in_block(block: &Block, maps: &mut Vec<RawVar>) {
     for stmt in &block.statements {
         match stmt {
             Statement::Assignment(assign) => {
-                let Lvalue::Identifier(ident) = &assign.lvalue;
-                if ident.kind == IdentKind::Map {
-                    maps.push((
-                        format!("@{}", ident.name),
-                        VarLoc {
-                            offset: assign.span.start(),
-                            text: assign.span.as_str().to_string(),
-                        },
-                    ));
-                }
+                let map_name = match &assign.lvalue {
+                    Lvalue::Identifier(ident) if ident.kind == IdentKind::Map => ident.name,
+                    Lvalue::MapAccess(access) => access.map.name,
+                    _ => continue,
+                };
+                maps.push((
+                    format!("@{}", map_name),
+                    VarLoc {
+                        offset: assign.span.start(),
+                        text: assign.span.as_str().to_string(),
+                    },
+                ));
             }
             Statement::Loop(loop_stmt) => match loop_stmt.as_ref() {
                 Loop::For(for_loop) => {
-                    if let Expr::Identifier(ident) = for_loop.lhs.as_ref() {
-                        if ident.kind == IdentKind::Map {
-                            maps.push((
-                                format!("@{}", ident.name),
-                                VarLoc {
-                                    offset: loop_stmt.span().start(),
-                                    text: loop_stmt.span().as_str().to_string(),
-                                },
-                            ));
-                        }
-                    }
+                    let map_name = match for_loop.lhs.as_ref() {
+                        Expr::Identifier(ident) if ident.kind == IdentKind::Map => ident.name,
+                        Expr::MapAccess(access) => access.map.name,
+                        _ => continue,
+                    };
+                    maps.push((
+                        format!("@{}", map_name),
+                        VarLoc {
+                            offset: loop_stmt.span().start(),
+                            text: loop_stmt.span().as_str().to_string(),
+                        },
+                    ));
                     collect_maps_in_block(&for_loop.block, maps);
                 }
                 Loop::While(w) => {
@@ -150,17 +153,18 @@ fn collect_maps_in_block(block: &Block, maps: &mut Vec<RawVar>) {
             Statement::Expr(expr) => {
                 if let Expr::UnaryExpr(unary) = expr.as_ref() {
                     if matches!(unary.op, UnaryOp::Inc | UnaryOp::Dec) {
-                        if let Expr::Identifier(ident) = unary.expr.as_ref() {
-                            if ident.kind == IdentKind::Map {
-                                maps.push((
-                                    format!("@{}", ident.name),
-                                    VarLoc {
-                                        offset: unary.span.start(),
-                                        text: unary.span.as_str().to_string(),
-                                    },
-                                ));
-                            }
-                        }
+                        let map_name = match unary.expr.as_ref() {
+                            Expr::Identifier(ident) if ident.kind == IdentKind::Map => ident.name,
+                            Expr::MapAccess(access) => access.map.name,
+                            _ => continue,
+                        };
+                        maps.push((
+                            format!("@{}", map_name),
+                            VarLoc {
+                                offset: unary.span.start(),
+                                text: unary.span.as_str().to_string(),
+                            },
+                        ));
                     }
                 }
             }
@@ -200,8 +204,10 @@ fn collect_vars_in_block(block: &Block, offset: usize, vars: &mut Vec<RawVar>) {
         }
         match stmt {
             Statement::Assignment(assign) => {
-                let Lvalue::Identifier(ident) = &assign.lvalue;
-                if ident.kind != IdentKind::Map {
+                if let Some(ident) = match &assign.lvalue {
+                    Lvalue::Identifier(ident) if ident.kind != IdentKind::Map => Some(ident),
+                    _ => None,
+                } {
                     vars.push((
                         format!("{}{}", var_prefix(ident.kind), ident.name),
                         VarLoc {
@@ -246,16 +252,17 @@ fn collect_vars_in_block(block: &Block, offset: usize, vars: &mut Vec<RawVar>) {
             Statement::Expr(expr) => {
                 if let Expr::UnaryExpr(unary) = expr.as_ref() {
                     if matches!(unary.op, UnaryOp::Inc | UnaryOp::Dec) {
-                        if let Expr::Identifier(ident) = unary.expr.as_ref() {
-                            if ident.kind != IdentKind::Map {
-                                vars.push((
-                                    format!("{}{}", var_prefix(ident.kind), ident.name),
-                                    VarLoc {
-                                        offset: unary.span.start(),
-                                        text: unary.span.as_str().to_string(),
-                                    },
-                                ));
-                            }
+                        if let Some(ident) = match unary.expr.as_ref() {
+                            Expr::Identifier(ident) if ident.kind != IdentKind::Map => Some(ident),
+                            _ => None,
+                        } {
+                            vars.push((
+                                format!("{}{}", var_prefix(ident.kind), ident.name),
+                                VarLoc {
+                                    offset: unary.span.start(),
+                                    text: unary.span.as_str().to_string(),
+                                },
+                            ));
                         }
                     }
                 }
@@ -312,9 +319,16 @@ impl ErrorChecker<'_> {
             match stmt {
                 Statement::Assignment(assign) => {
                     self.check_expr(&assign.rvalue, scope);
-                    let Lvalue::Identifier(ident) = &assign.lvalue;
-                    if ident.kind != IdentKind::Map {
-                        scope.push(format!("{}{}", var_prefix(ident.kind), ident.name));
+                    match &assign.lvalue {
+                        Lvalue::Identifier(ident) if ident.kind != IdentKind::Map => {
+                            scope.push(format!("{}{}", var_prefix(ident.kind), ident.name));
+                        }
+                        Lvalue::MapAccess(access) => {
+                            for key in &access.keys {
+                                self.check_expr(key, scope);
+                            }
+                        }
+                        _ => {}
                     }
                 }
                 Statement::Loop(loop_stmt) => match loop_stmt.as_ref() {
@@ -368,7 +382,12 @@ impl ErrorChecker<'_> {
                         .iter()
                         .any(|m| m.name == format!("@{}", ident.name))
                     {
-                        self.emit_diag(&UndefinedIdent::new(ident.name, ident.span));
+                        self.out.push(Diagnostic {
+                            range: self.line_index.range(ident.span),
+                            severity: Some(DiagnosticSeverity::WARNING),
+                            message: format!("Undefined map \"@{}\"", ident.name),
+                            ..Default::default()
+                        });
                     }
                 }
             },
@@ -386,6 +405,24 @@ impl ErrorChecker<'_> {
             }
             Expr::UnaryExpr(unary) => {
                 self.check_expr(&unary.expr, scope);
+            }
+            Expr::MapAccess(access) => {
+                if !access.map.name.is_empty()
+                    && !self
+                        .global_maps
+                        .iter()
+                        .any(|m| m.name == format!("@{}", access.map.name))
+                {
+                    self.out.push(Diagnostic {
+                        range: self.line_index.range(access.map.span),
+                        severity: Some(DiagnosticSeverity::WARNING),
+                        message: format!("Undefined map \"@{}\"", access.map.name),
+                        ..Default::default()
+                    });
+                }
+                for key in &access.keys {
+                    self.check_expr(key, scope);
+                }
             }
             Expr::Integer(_) | Expr::String(_) => {}
         }
@@ -430,8 +467,19 @@ impl SemanticAnalyzer {
         for stmt in &block.statements {
             match stmt {
                 Statement::Assignment(a) => {
-                    let Lvalue::Identifier(ident) = &a.lvalue;
-                    variables.push(format!("{}{}", var_prefix(ident.kind), ident.name));
+                    let prefix = match &a.lvalue {
+                        Lvalue::Identifier(ident) => {
+                            Some(format!("{}{}", var_prefix(ident.kind), ident.name))
+                        }
+                        Lvalue::MapAccess(access) => Some(format!(
+                            "{}{}",
+                            var_prefix(access.map.kind),
+                            access.map.name
+                        )),
+                    };
+                    if let Some(v) = prefix {
+                        variables.push(v);
+                    }
                 }
                 Statement::Loop(loop_stmt) => {
                     if let Loop::For(for_loop) = loop_stmt.as_ref() {
@@ -450,8 +498,22 @@ impl SemanticAnalyzer {
                 Statement::Expr(expr) => {
                     if let Expr::UnaryExpr(unary) = expr.as_ref() {
                         if matches!(unary.op, UnaryOp::Inc | UnaryOp::Dec) {
-                            if let Expr::Identifier(ident) = unary.expr.as_ref() {
-                                variables.push(format!("{}{}", var_prefix(ident.kind), ident.name));
+                            match unary.expr.as_ref() {
+                                Expr::Identifier(ident) => {
+                                    variables.push(format!(
+                                        "{}{}",
+                                        var_prefix(ident.kind),
+                                        ident.name
+                                    ));
+                                }
+                                Expr::MapAccess(access) => {
+                                    variables.push(format!(
+                                        "{}{}",
+                                        var_prefix(access.map.kind),
+                                        access.map.name
+                                    ));
+                                }
+                                _ => {}
                             }
                         }
                     }
