@@ -36,12 +36,18 @@ macro_rules! assert_diag_msg {
 #[tokio::test]
 async fn test_sanity() {
     let prog = r#"
+        #define MAX 10
+        #define FLAG
         BEGIN {
             $var = 1;
             $undefined;
             print($undefined);
             $var2 = count();
             $var3 = undefinedfunc();
+            if ($var > MAX) {
+                print(FLAG);
+            }
+            print(UNKNOWN);
         }"#;
 
     let path = Path::new("tmp_path");
@@ -56,7 +62,9 @@ async fn test_sanity() {
     assert_eq!(analyzed.variables.len(), 3);
 
     let errors = analyzed.diagnostics();
-    assert_eq!(errors.len(), 3);
+    assert_eq!(errors.len(), 4);
     assert_diag_msg!(errors[1], "Undefined Identifier");
     assert_diag_msg!(errors[2], "Undefined function");
+    assert_diag_msg!(errors[3], "Undefined Identifier");
+    assert_diag_msg!(errors[3], "UNKNOWN");
 }

@@ -3,12 +3,13 @@ use std::sync::Arc;
 use crate::builtins::BUILTINS;
 use crate::common::utils::OwnedLineIndex;
 use crate::parser::{
-    Block, Expr, IdentKind, Loop, Lvalue, Node, Preamble, Probe, Program, Statement, UnaryOp,
+    Block, CDef, Expr, IdentKind, Loop, Lvalue, Node, Preamble, Probe, Program, Statement, UnaryOp,
     UndefinedFunc, UndefinedIdent,
 };
 use crate::server::Context;
 use crate::storage::Document;
 use anyhow::Result;
+use pest::Span;
 use std::path::Path;
 use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity};
 
@@ -78,6 +79,24 @@ fn merge_vars(raw: Vec<RawVar>) -> Vec<VarInfo> {
             VarInfo { name, locs }
         })
         .collect()
+}
+
+fn collect_defines(program: &Program) -> Vec<RawVar> {
+    let mut defines = Vec::new();
+    for preamble in &program.preambles {
+        if let Preamble::CDef(cdef) = preamble {
+            if let CDef::Define(define) = cdef.as_ref() {
+                defines.push((
+                    define.name.name.to_string(),
+                    VarLoc {
+                        offset: define.span.start(),
+                        text: define.span.as_str().to_string(),
+                    },
+                ));
+            }
+        }
+    }
+    defines
 }
 
 fn collect_global_maps(program: &Program) -> Vec<RawVar> {
@@ -162,6 +181,7 @@ pub fn variables_at(program: &Program, offset: usize) -> Vec<VarInfo> {
         }
     }
     raw.extend(collect_global_maps(program));
+    raw.extend(collect_defines(program));
     merge_vars(raw)
 }
 
@@ -247,6 +267,133 @@ fn collect_vars_in_block(block: &Block, offset: usize, vars: &mut Vec<RawVar>) {
     }
 }
 
+struct ErrorChecker<'a> {
+    global_maps: &'a [VarInfo],
+    defines: &'a [VarInfo],
+    line_index: &'a OwnedLineIndex,
+    out: Vec<Diagnostic>,
+}
+
+impl ErrorChecker<'_> {
+    fn check_program(&mut self, program: &Program) {
+        for preamble in &program.preambles {
+            match preamble {
+                Preamble::Probe(probe) => self.check_probe(probe),
+                Preamble::CDef(_) => {}
+                Preamble::Error(e) => self.push_span_error(e.span(), e.diagnosis()),
+            }
+        }
+    }
+
+    fn push_span_error(&mut self, span: Span, message: String) {
+        self.out.push(Diagnostic {
+            range: self.line_index.range(span),
+            severity: Some(DiagnosticSeverity::ERROR),
+            message,
+            ..Default::default()
+        });
+    }
+
+    fn emit_diag(&mut self, stmt: &Statement) {
+        if let Statement::Error(e) = stmt {
+            self.push_span_error(e.span(), e.diagnosis());
+        }
+    }
+
+    fn check_probe(&mut self, probe: &Probe) {
+        let mut scope = Vec::new();
+        if let Some(cond) = &probe.condition {
+            self.check_expr(cond, &scope);
+        }
+        self.check_block(&probe.block, &mut scope);
+    }
+
+    fn check_block(&mut self, block: &Block, scope: &mut Vec<String>) {
+        for stmt in &block.statements {
+            self.emit_diag(stmt);
+            match stmt {
+                Statement::Assignment(assign) => {
+                    self.check_expr(&assign.rvalue, scope);
+                    let Lvalue::Identifier(ident) = &assign.lvalue;
+                    if ident.kind != IdentKind::Map {
+                        scope.push(format!("{}{}", var_prefix(ident.kind), ident.name));
+                    }
+                }
+                Statement::Loop(loop_stmt) => match loop_stmt.as_ref() {
+                    Loop::For(for_loop) => {
+                        self.check_expr(&for_loop.rhs, scope);
+                        if let Expr::Identifier(ident) = for_loop.lhs.as_ref() {
+                            if ident.kind != IdentKind::Map {
+                                scope.push(format!("{}{}", var_prefix(ident.kind), ident.name));
+                            }
+                        }
+                        let mut inner = scope.clone();
+                        self.check_block(&for_loop.block, &mut inner);
+                    }
+                    Loop::While(w) => {
+                        self.check_expr(&w.condition, scope);
+                        let mut inner = scope.clone();
+                        self.check_block(&w.block, &mut inner);
+                    }
+                },
+                Statement::IfCond(if_cond) => {
+                    self.check_expr(&if_cond.condition, scope);
+                    let mut inner = scope.clone();
+                    self.check_block(&if_cond.block, &mut inner);
+                }
+                Statement::Expr(expr) => {
+                    self.check_expr(expr, scope);
+                }
+                Statement::Error(_) => {}
+            }
+        }
+    }
+
+    fn check_expr(&mut self, expr: &Expr, scope: &[String]) {
+        match expr {
+            Expr::Identifier(ident) => match ident.kind {
+                IdentKind::Bare => {
+                    if !BUILTINS.keywords.iter().any(|k| k.name == ident.name)
+                        && !self.defines.iter().any(|d| d.name == ident.name)
+                    {
+                        self.emit_diag(&UndefinedIdent::new(ident.name, ident.span));
+                    }
+                }
+                IdentKind::Scratch => {
+                    if !scope.contains(&format!("${}", ident.name)) {
+                        self.emit_diag(&UndefinedIdent::new(ident.name, ident.span));
+                    }
+                }
+                IdentKind::Map => {
+                    if !self
+                        .global_maps
+                        .iter()
+                        .any(|m| m.name == format!("@{}", ident.name))
+                    {
+                        self.emit_diag(&UndefinedIdent::new(ident.name, ident.span));
+                    }
+                }
+            },
+            Expr::Call(call) => {
+                if !BUILTINS.functions.iter().any(|f| f.name == call.func.name) {
+                    self.emit_diag(&UndefinedFunc::new(call.func.name, call.span()));
+                }
+                for arg in &call.args {
+                    self.check_expr(arg, scope);
+                }
+            }
+            Expr::BinaryExpr(bin) => {
+                self.check_expr(&bin.lhs, scope);
+                self.check_expr(&bin.rhs, scope);
+            }
+            Expr::UnaryExpr(unary) => {
+                self.check_expr(&unary.expr, scope);
+            }
+            Expr::Integer(_) | Expr::String(_) => {}
+        }
+    }
+}
+
 pub struct SemanticAnalyzer;
 
 pub struct AnalyzedFile {
@@ -319,184 +466,17 @@ impl SemanticAnalyzer {
     fn collect_errors(
         program: &Program,
         global_maps: &[VarInfo],
+        defines: &[VarInfo],
         line_index: &OwnedLineIndex,
     ) -> Vec<Diagnostic> {
-        let mut errors = vec![];
-        for preamble in &program.preambles {
-            match preamble {
-                Preamble::Probe(probe) => {
-                    Self::check_probe_errors(probe, global_maps, &mut errors, line_index);
-                }
-                Preamble::CDef(_) => {}
-                Preamble::Error(e) => {
-                    errors.push(Diagnostic {
-                        range: line_index.range(e.span()),
-                        severity: Some(DiagnosticSeverity::ERROR),
-                        message: e.diagnosis(),
-                        ..Default::default()
-                    });
-                }
-            }
-        }
-        errors
-    }
-
-    fn emit_diag(stmt: &Statement, line_index: &OwnedLineIndex, out: &mut Vec<Diagnostic>) {
-        if let Statement::Error(e) = stmt {
-            out.push(Diagnostic {
-                range: line_index.range(e.span()),
-                severity: Some(DiagnosticSeverity::ERROR),
-                message: e.diagnosis(),
-                ..Default::default()
-            });
-        }
-    }
-
-    fn check_probe_errors(
-        probe: &Probe,
-        global_maps: &[VarInfo],
-        out: &mut Vec<Diagnostic>,
-        line_index: &OwnedLineIndex,
-    ) {
-        let mut scope = Vec::new();
-        if let Some(cond) = &probe.condition {
-            Self::check_expr_errors(cond, &scope, global_maps, out, line_index);
-        }
-        Self::check_block_errors(&probe.block, &mut scope, global_maps, out, line_index);
-    }
-
-    fn check_block_errors(
-        block: &Block,
-        scope: &mut Vec<String>,
-        global_maps: &[VarInfo],
-        out: &mut Vec<Diagnostic>,
-        line_index: &OwnedLineIndex,
-    ) {
-        for stmt in &block.statements {
-            Self::emit_diag(stmt, line_index, out);
-            match stmt {
-                Statement::Assignment(assign) => {
-                    Self::check_expr_errors(&assign.rvalue, scope, global_maps, out, line_index);
-                    let Lvalue::Identifier(ident) = &assign.lvalue;
-                    if ident.kind != IdentKind::Map {
-                        scope.push(format!("{}{}", var_prefix(ident.kind), ident.name));
-                    }
-                }
-                Statement::Loop(loop_stmt) => match loop_stmt.as_ref() {
-                    Loop::For(for_loop) => {
-                        Self::check_expr_errors(&for_loop.rhs, scope, global_maps, out, line_index);
-                        if let Expr::Identifier(ident) = for_loop.lhs.as_ref() {
-                            if ident.kind != IdentKind::Map {
-                                scope.push(format!("{}{}", var_prefix(ident.kind), ident.name));
-                            }
-                        }
-                        let mut inner = scope.clone();
-                        Self::check_block_errors(
-                            &for_loop.block,
-                            &mut inner,
-                            global_maps,
-                            out,
-                            line_index,
-                        );
-                    }
-                    Loop::While(w) => {
-                        Self::check_expr_errors(&w.condition, scope, global_maps, out, line_index);
-                        let mut inner = scope.clone();
-                        Self::check_block_errors(
-                            &w.block,
-                            &mut inner,
-                            global_maps,
-                            out,
-                            line_index,
-                        );
-                    }
-                },
-                Statement::IfCond(if_cond) => {
-                    Self::check_expr_errors(
-                        &if_cond.condition,
-                        scope,
-                        global_maps,
-                        out,
-                        line_index,
-                    );
-                    let mut inner = scope.clone();
-                    Self::check_block_errors(
-                        &if_cond.block,
-                        &mut inner,
-                        global_maps,
-                        out,
-                        line_index,
-                    );
-                }
-                Statement::Expr(expr) => {
-                    Self::check_expr_errors(expr, scope, global_maps, out, line_index);
-                }
-                Statement::Error(_) => {}
-            }
-        }
-    }
-
-    fn check_expr_errors(
-        expr: &Expr,
-        scope: &[String],
-        global_maps: &[VarInfo],
-        out: &mut Vec<Diagnostic>,
-        line_index: &OwnedLineIndex,
-    ) {
-        match expr {
-            Expr::Identifier(ident) => match ident.kind {
-                IdentKind::Bare => {
-                    if !BUILTINS.keywords.iter().any(|k| k.name == ident.name) {
-                        Self::emit_diag(
-                            &UndefinedIdent::new(ident.name, ident.span),
-                            line_index,
-                            out,
-                        );
-                    }
-                }
-                IdentKind::Scratch => {
-                    if !scope.contains(&format!("${}", ident.name)) {
-                        Self::emit_diag(
-                            &UndefinedIdent::new(ident.name, ident.span),
-                            line_index,
-                            out,
-                        );
-                    }
-                }
-                IdentKind::Map => {
-                    if !global_maps
-                        .iter()
-                        .any(|m| m.name == format!("@{}", ident.name))
-                    {
-                        Self::emit_diag(
-                            &UndefinedIdent::new(ident.name, ident.span),
-                            line_index,
-                            out,
-                        );
-                    }
-                }
-            },
-            Expr::Call(call) => {
-                if !BUILTINS.functions.iter().any(|f| f.name == call.func.name) {
-                    Self::emit_diag(
-                        &UndefinedFunc::new(call.func.name, call.span()),
-                        line_index,
-                        out,
-                    );
-                }
-                for arg in &call.args {
-                    Self::check_expr_errors(arg, scope, global_maps, out, line_index);
-                }
-            }
-            Expr::BinaryExpr(bin) => {
-                Self::check_expr_errors(&bin.lhs, scope, global_maps, out, line_index);
-                Self::check_expr_errors(&bin.rhs, scope, global_maps, out, line_index);
-            }
-            Expr::UnaryExpr(unary) => {
-                Self::check_expr_errors(&unary.expr, scope, global_maps, out, line_index);
-            }
-            Expr::Integer(_) | Expr::String(_) => {}
-        }
+        let mut checker = ErrorChecker {
+            global_maps,
+            defines,
+            line_index,
+            out: Vec::new(),
+        };
+        checker.check_program(program);
+        checker.out
     }
 
     pub async fn analyze(&self, context: &Context, path: &Path) -> Result<AnalyzedFile> {
@@ -507,7 +487,8 @@ impl SemanticAnalyzer {
 
         let program = ast_cell.program();
         let global_maps = merge_vars(collect_global_maps(program));
-        let diagnostics = Self::collect_errors(program, &global_maps, &line_index);
+        let defines = merge_vars(collect_defines(program));
+        let diagnostics = Self::collect_errors(program, &global_maps, &defines, &line_index);
         let variables = Self::walk_variables(program);
 
         Ok(AnalyzedFile {
