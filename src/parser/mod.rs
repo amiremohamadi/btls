@@ -21,6 +21,10 @@ pub trait Node<'a> {
         None
     }
 
+    fn as_config(&self) -> Option<&Config<'a>> {
+        None
+    }
+
     fn errors<'b>(&'b self) -> FilterWalk<'a, 'b, ErrorRef<'a, 'b>> {
         FilterWalk::new(self.as_node(), |node| node.as_error())
     }
@@ -656,9 +660,55 @@ impl<'a> Node<'a> for ErrorPreamble<'a> {
 }
 
 #[derive(Debug)]
+pub struct ConfigAssignment<'a> {
+    pub key: &'a str,
+    pub value: Option<&'a str>,
+    pub span: Span<'a>,
+}
+
+impl<'a> Node<'a> for ConfigAssignment<'a> {
+    fn as_node(&self) -> &dyn Node<'a> {
+        self
+    }
+
+    fn children(&self) -> Vec<&dyn Node<'a>> {
+        Vec::new()
+    }
+
+    fn span(&self) -> Span<'a> {
+        self.span
+    }
+}
+
+#[derive(Debug)]
+pub struct Config<'a> {
+    pub assignments: Vec<ConfigAssignment<'a>>,
+    pub span: Span<'a>,
+}
+
+impl<'a> Node<'a> for Config<'a> {
+    fn as_node(&self) -> &dyn Node<'a> {
+        self
+    }
+
+    fn as_config(&self) -> Option<&Config<'a>> {
+        Some(self)
+    }
+
+    fn children(&self) -> Vec<&dyn Node<'a>> {
+        self.assignments.iter().map(|a| a.as_node()).collect()
+    }
+
+    fn span(&self) -> Span<'a> {
+        self.span
+    }
+}
+
+#[derive(Debug)]
 pub enum Preamble<'a> {
     Probe(Probe<'a>),
     CDef(Box<CDef<'a>>),
+    Config(Box<Config<'a>>),
     Error(Box<ErrorPreamble<'a>>),
 }
 
@@ -667,10 +717,18 @@ impl<'a> Node<'a> for Preamble<'a> {
         self
     }
 
+    fn as_config(&self) -> Option<&Config<'a>> {
+        match self {
+            Self::Config(c) => Some(c.as_ref()),
+            _ => None,
+        }
+    }
+
     fn children(&self) -> Vec<&dyn Node<'a>> {
         match self {
             Self::Probe(p) => p.children(),
             Self::CDef(c) => vec![c.as_node()],
+            Self::Config(c) => vec![c.as_node()],
             Self::Error(e) => vec![e.as_node()],
         }
     }
@@ -679,6 +737,7 @@ impl<'a> Node<'a> for Preamble<'a> {
         match self {
             Self::Probe(p) => p.span(),
             Self::CDef(c) => c.span(),
+            Self::Config(c) => c.span(),
             Self::Error(e) => e.span(),
         }
     }

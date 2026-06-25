@@ -38,6 +38,7 @@ async fn test_sanity() {
     let prog = r#"
         #define MAX 10
         #define FLAG
+        config = { stack_mode=perf; max_map_keys=2 }
         BEGIN {
             $var = 1;
             $undefined;

@@ -7,10 +7,10 @@ use pest::{
 };
 
 use super::{
-    AssignOp, Assignment, BinaryExpr, Block, CDef, Call, Define, ErrorPreamble, ErrorStatement,
-    Expr, For, IdentKind, Identifier, If, Include, IntegerLiteral, Loop, Lvalue, Node, Preamble,
-    Probe, Program, Statement, StringLiteral, UnaryExpr, UnaryOp, UnknownPreamble,
-    UnknownStatement, UnmatchedBrace, While,
+    AssignOp, Assignment, BinaryExpr, Block, CDef, Call, Config, ConfigAssignment, Define,
+    ErrorPreamble, ErrorStatement, Expr, For, IdentKind, Identifier, If, Include, IntegerLiteral,
+    Loop, Lvalue, Node, Preamble, Probe, Program, Statement, StringLiteral, UnaryExpr, UnaryOp,
+    UnknownPreamble, UnknownStatement, UnmatchedBrace, While,
 };
 
 #[derive(pest_derive::Parser)]
@@ -367,10 +367,30 @@ fn convert_cdef(pair: Pair<Rule>) -> CDef {
     }
 }
 
+fn convert_config(pair: Pair<Rule>) -> Config {
+    assert!(matches!(pair.as_rule(), Rule::cfg_block));
+    let span = pair.as_span();
+    let assignments = pair
+        .into_inner()
+        .filter_map(|pair| match pair.as_rule() {
+            Rule::cfg_assign => {
+                let span = pair.as_span();
+                let mut inner = pair.into_inner();
+                let key = inner.next().unwrap().as_str();
+                let value = inner.next().map(|p| p.as_str());
+                Some(ConfigAssignment { key, value, span })
+            }
+            _ => None,
+        })
+        .collect();
+    Config { assignments, span }
+}
+
 fn convert_preamble(pair: Pair<Rule>) -> Preamble {
     assert!(matches!(pair.as_rule(), Rule::preamble));
     let pair = pair.into_inner().exactly_one().unwrap();
     match pair.as_rule() {
+        Rule::cfg_block => Preamble::Config(Box::new(convert_config(pair))),
         Rule::probe => Preamble::Probe(convert_probe(pair)),
         Rule::cdef => Preamble::CDef(Box::new(convert_cdef(pair))),
         _ => unreachable!(),

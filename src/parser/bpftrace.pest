@@ -61,7 +61,11 @@ include_path = @{ "<" ~ (!(">" | NEWLINE) ~ ANY)* ~ ">" }
 define       = ${ "#define" ~ SPACE+ ~ identifier ~ (SPACE+ ~ define_body)? }
 define_body  = @{ (!NEWLINE ~ ANY)+ }
 
-preamble          = { probe | cdef }
+cfg_value  = { identifier | number | string }
+cfg_assign = { identifier ~ "=" ~ cfg_value? ~ ";"? }
+cfg_block  = { "config" ~ "=" ~ "{" ~ (COMMENT | cfg_assign | error)* ~ "}" }
+
+preamble          = { cfg_block | probe | cdef }
 
 error        =  { rest_of_line }
 rest_of_line = @{ (!(NEWLINE | "}") ~ ANY)+ ~ NEWLINE? }

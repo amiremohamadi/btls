@@ -6,7 +6,28 @@ use super::*;
 fn parse_no_errors(input: &str) {
     let prog = parse(input).unwrap();
     let errors: Vec<_> = prog.errors().collect();
-    assert!(errors.is_empty(), "parse failed!");
+    assert!(
+        errors.is_empty(),
+        "parse failed: {input:?} errors: {errors:?}"
+    );
+}
+
+fn check_config(input: &str, expected: &[(&str, &str)]) {
+    let prog = parse(input).unwrap();
+    let errors: Vec<_> = prog.errors().collect();
+    assert!(
+        errors.is_empty(),
+        "parse failed: {input:?} errors: {errors:?}"
+    );
+    assert_eq!(prog.preambles.len(), 1);
+    let Preamble::Config(config) = &prog.preambles[0] else {
+        panic!("not a config block!");
+    };
+    assert_eq!(config.assignments.len(), expected.len());
+    for (i, (key, value)) in expected.iter().enumerate() {
+        assert_eq!(config.assignments[i].key, *key);
+        assert_eq!(config.assignments[i].value, Some(*value));
+    }
 }
 
 fn parse_has_errors(input: &str) {
@@ -74,6 +95,18 @@ fn test_sanity() {
             ErrorRef::Preamble(ErrorPreamble::UnmatchedBrace(_))
         ),
         "unexpected error type"
+    );
+
+    // config blocks
+    parse_no_errors("config = { }");
+    parse_no_errors("config = { stack_mode=perf; }");
+    parse_no_errors("config = { stack_mode=perf; max_map_keys=2 }");
+    parse_no_errors("config = { stack_mode=perf; }\nBEGIN { }");
+    parse_no_errors("#define MAX 100\nconfig = { max_map_keys=2 }\nBEGIN { }");
+
+    check_config(
+        "config = { stack_mode=perf; max_map_keys=2 }",
+        &[("stack_mode", "perf"), ("max_map_keys", "2")],
     );
 }
 
