@@ -350,6 +350,7 @@ pub enum UnaryOp {
     Not,
     Inc,
     Dec,
+    Deref,
 }
 
 #[derive(Debug)]
@@ -382,6 +383,7 @@ pub enum Expr<'a> {
     BinaryExpr(Box<BinaryExpr<'a>>),
     UnaryExpr(Box<UnaryExpr<'a>>),
     MapAccess(Box<MapAccess<'a>>),
+    Cast(Box<CastExpr<'a>>),
 }
 
 impl<'a> Node<'a> for Expr<'a> {
@@ -402,6 +404,7 @@ impl<'a> Node<'a> for Expr<'a> {
             Self::BinaryExpr(expr) => vec![expr.as_node()],
             Self::UnaryExpr(expr) => vec![expr.as_node()],
             Self::MapAccess(access) => access.children(),
+            Self::Cast(cast) => cast.children(),
         }
     }
 
@@ -414,7 +417,29 @@ impl<'a> Node<'a> for Expr<'a> {
             Self::BinaryExpr(expr) => expr.span(),
             Self::UnaryExpr(expr) => expr.span(),
             Self::MapAccess(access) => access.span,
+            Self::Cast(cast) => cast.span(),
         }
+    }
+}
+
+#[derive(Debug)]
+pub struct CastExpr<'a> {
+    pub type_name: &'a str,
+    pub expr: Box<Expr<'a>>,
+    pub span: Span<'a>,
+}
+
+impl<'a> Node<'a> for CastExpr<'a> {
+    fn as_node(&self) -> &dyn Node<'a> {
+        self
+    }
+
+    fn children(&self) -> Vec<&dyn Node<'a>> {
+        vec![&*self.expr]
+    }
+
+    fn span(&self) -> Span<'a> {
+        self.span
     }
 }
 

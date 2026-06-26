@@ -7,10 +7,11 @@ use pest::{
 };
 
 use super::{
-    AssignOp, Assignment, BinaryExpr, Block, CDef, Call, Config, ConfigAssignment, Define, Else,
-    ErrorPreamble, ErrorStatement, Expr, For, IdentKind, Identifier, If, Include, IntegerLiteral,
-    Loop, Lvalue, MapAccess, Node, Preamble, Probe, Program, Statement, StringLiteral, UnaryExpr,
-    UnaryOp, UnknownPreamble, UnknownStatement, UnmatchedBrace, Unroll, While,
+    AssignOp, Assignment, BinaryExpr, Block, CDef, Call, CastExpr, Config, ConfigAssignment,
+    Define, Else, ErrorPreamble, ErrorStatement, Expr, For, IdentKind, Identifier, If, Include,
+    IntegerLiteral, Loop, Lvalue, MapAccess, Node, Preamble, Probe, Program, Statement,
+    StringLiteral, UnaryExpr, UnaryOp, UnknownPreamble, UnknownStatement, UnmatchedBrace, Unroll,
+    While,
 };
 
 #[derive(pest_derive::Parser)]
@@ -187,9 +188,27 @@ fn convert_primary_expr(pair: Pair<Rule>) -> Expr {
         Rule::number => Expr::Integer(Box::new(convert_int(pair))),
         Rule::string => Expr::String(Box::new(convert_str(pair))),
         Rule::call => Expr::Call(Box::new(convert_call(pair))),
+        Rule::cast => convert_cast(pair),
+        Rule::paren_expr => {
+            let inner = pair.into_inner().exactly_one().unwrap();
+            convert_expr(inner)
+        }
         Rule::variable => convert_var_to_expr(pair),
         _ => unreachable!(),
     }
+}
+
+fn convert_cast(pair: Pair<Rule>) -> Expr {
+    assert!(matches!(pair.as_rule(), Rule::cast));
+    let span = pair.as_span();
+    let mut pairs = pair.into_inner();
+    let type_name = pairs.next().unwrap().as_str();
+    let expr = convert_expr(pairs.next().unwrap());
+    Expr::Cast(Box::new(CastExpr {
+        type_name,
+        expr: Box::new(expr),
+        span,
+    }))
 }
 
 fn convert_unary_op(op: &Pair<Rule>) -> UnaryOp {
@@ -199,6 +218,7 @@ fn convert_unary_op(op: &Pair<Rule>) -> UnaryOp {
         Rule::pos => UnaryOp::Plus,
         Rule::inc_prefix | Rule::inc_postfix => UnaryOp::Inc,
         Rule::dec_prefix | Rule::dec_postfix => UnaryOp::Dec,
+        Rule::deref => UnaryOp::Deref,
         _ => unreachable!(),
     }
 }
@@ -218,12 +238,14 @@ fn convert_expr(pair: Pair<Rule>) -> Expr {
         .op(Op::infix(Rule::add, Assoc::Left)
             | Op::infix(Rule::sub, Assoc::Left)
             | Op::infix(Rule::mul, Assoc::Left)
-            | Op::infix(Rule::div, Assoc::Left))
+            | Op::infix(Rule::div, Assoc::Left)
+            | Op::infix(Rule::r#mod, Assoc::Left))
         .op(Op::prefix(Rule::not)
             | Op::prefix(Rule::neg)
             | Op::prefix(Rule::pos)
             | Op::prefix(Rule::inc_prefix)
-            | Op::prefix(Rule::dec_prefix))
+            | Op::prefix(Rule::dec_prefix)
+            | Op::prefix(Rule::deref))
         .op(Op::postfix(Rule::inc_postfix) | Op::postfix(Rule::dec_postfix));
 
     parser

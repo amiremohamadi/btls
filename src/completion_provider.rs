@@ -1,5 +1,5 @@
 use super::analyzer::semantic_analyzer;
-use super::builtins::{BUILTINS, SYNTAX_KEYWORDS};
+use super::builtins::{BUILTINS, DATA_TYPES, SYNTAX_KEYWORDS};
 use super::parser::{Config, Node, Program, Walk};
 use super::server::Context;
 use std::path::Path;
@@ -64,6 +64,7 @@ pub async fn completion(
     let builtin_keywords =
         builtin_to_completion_item!(BUILTINS.keywords, CompletionItemKind::KEYWORD);
     let syntax_keywords = builtin_to_completion_item!(SYNTAX_KEYWORDS, CompletionItemKind::KEYWORD);
+    let data_types = builtin_to_completion_item!(DATA_TYPES, CompletionItemKind::KEYWORD);
     let builtin_funcs =
         builtin_to_completion_item!(BUILTINS.functions, CompletionItemKind::FUNCTION);
 
@@ -72,6 +73,7 @@ pub async fn completion(
             .into_iter()
             .chain(builtin_keywords)
             .chain(syntax_keywords)
+            .chain(data_types)
             .chain(builtin_funcs)
             .collect(),
     )))

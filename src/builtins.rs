@@ -43,6 +43,18 @@ pub const SYNTAX_KEYWORDS: &[BuiltinSymbol] = &[
     keyword!("while"),
 ];
 
+pub const DATA_TYPES: &[BuiltinSymbol] = &[
+    keyword!("bool"),
+    keyword!("uint8"),
+    keyword!("int8"),
+    keyword!("uint16"),
+    keyword!("int16"),
+    keyword!("uint32"),
+    keyword!("int32"),
+    keyword!("uint64"),
+    keyword!("int64"),
+];
+
 pub const BUILTINS: BuiltinSymbols = include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/target/builtins.gen.rs"

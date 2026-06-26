@@ -476,6 +476,9 @@ impl ErrorChecker<'_> {
                 }
             }
             Expr::Integer(_) | Expr::String(_) => {}
+            Expr::Cast(cast) => {
+                self.check_expr(&cast.expr, scope);
+            }
         }
     }
 
