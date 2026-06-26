@@ -146,6 +146,9 @@ fn collect_maps_in_block(block: &Block, maps: &mut Vec<RawVar>) {
                 Loop::While(w) => {
                     collect_maps_in_block(&w.block, maps);
                 }
+                Loop::Unroll(u) => {
+                    collect_maps_in_block(&u.block, maps);
+                }
             },
             Statement::IfCond(if_cond) => {
                 collect_maps_in_block(&if_cond.block, maps);
@@ -255,6 +258,11 @@ fn collect_vars_in_block(block: &Block, offset: usize, vars: &mut Vec<RawVar>) {
                     Loop::For(f) => {
                         if f.block.span().start() <= offset && offset < f.block.span().end() {
                             collect_vars_in_block(&f.block, offset, vars);
+                        }
+                    }
+                    Loop::Unroll(u) => {
+                        if u.block.span().start() <= offset && offset < u.block.span().end() {
+                            collect_vars_in_block(&u.block, offset, vars);
                         }
                     }
                 }
@@ -382,6 +390,10 @@ impl ErrorChecker<'_> {
                         self.check_expr(&w.condition, scope);
                         let mut inner = scope.clone();
                         self.check_block(&w.block, &mut inner);
+                    }
+                    Loop::Unroll(u) => {
+                        let mut inner = scope.clone();
+                        self.check_block(&u.block, &mut inner);
                     }
                 },
                 Statement::IfCond(if_cond) => {
@@ -546,6 +558,9 @@ impl SemanticAnalyzer {
                     }
                     if let Loop::While(w) = loop_stmt.as_ref() {
                         Self::walk_vars_in_block(&w.block, variables);
+                    }
+                    if let Loop::Unroll(u) = loop_stmt.as_ref() {
+                        Self::walk_vars_in_block(&u.block, variables);
                     }
                 }
                 Statement::IfCond(if_cond) => {

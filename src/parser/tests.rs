@@ -57,6 +57,7 @@ fn test_sanity() {
     parse_no_errors("BEGIN { if ($x == 1) {} else if ($x == 2) {} }");
     parse_no_errors("BEGIN { while ($x < $y) { return; } }");
     parse_no_errors("BEGIN { for ($x : $y) { $var += 1; } }");
+    parse_no_errors("BEGIN { unroll(3) { $var += 1; } }");
     parse_no_errors("BEGIN { @map = 1 + 2; $var = -1; $var = +2; $var2 = @map + -1; }");
     parse_no_errors("BEGIN { $var++; --$var; }");
     parse_no_errors("BEGIN { $x++; ++$x; $x--; --$x; @map++; ++@map; }");

@@ -473,6 +473,7 @@ impl<'a> Node<'a> for Assignment<'a> {
 pub enum Loop<'a> {
     While(Box<While<'a>>),
     For(Box<For<'a>>),
+    Unroll(Box<Unroll<'a>>),
 }
 
 impl<'a> Node<'a> for Loop<'a> {
@@ -484,6 +485,7 @@ impl<'a> Node<'a> for Loop<'a> {
         match self {
             Self::While(w) => w.children(),
             Self::For(f) => f.children(),
+            Self::Unroll(u) => u.children(),
         }
     }
 
@@ -491,6 +493,7 @@ impl<'a> Node<'a> for Loop<'a> {
         match self {
             Self::While(w) => w.span(),
             Self::For(f) => f.span(),
+            Self::Unroll(u) => u.span(),
         }
     }
 }
@@ -531,6 +534,27 @@ impl<'a> Node<'a> for For<'a> {
 
     fn children(&self) -> Vec<&dyn Node<'a>> {
         vec![&*self.lhs, &*self.rhs, &self.block]
+    }
+
+    fn span(&self) -> Span<'a> {
+        self.span
+    }
+}
+
+#[derive(Debug)]
+pub struct Unroll<'a> {
+    pub count: Box<IntegerLiteral<'a>>,
+    pub block: Block<'a>,
+    pub span: Span<'a>,
+}
+
+impl<'a> Node<'a> for Unroll<'a> {
+    fn as_node(&self) -> &dyn Node<'a> {
+        self
+    }
+
+    fn children(&self) -> Vec<&dyn Node<'a>> {
+        vec![&*self.count, &self.block]
     }
 
     fn span(&self) -> Span<'a> {

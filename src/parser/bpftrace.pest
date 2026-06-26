@@ -50,8 +50,9 @@ if         =  { "if" ~ "(" ~ expr ~ ")" ~ block ~ else? }
 else       =  { "else" ~ (if | block) }
 while      =  { "while" ~ "(" ~ expr ~ ")" ~ block }
 for        =  { "for" ~ "(" ~ expr ~ ":" ~ expr ~ ")" ~ block }
+unroll     =  { "unroll" ~ "(" ~ number ~ ")" ~ block }
 base_stmt  = _{ assignment | expr }
-statement  =  { base_stmt ~ ";" | if | while | for }
+statement  =  { base_stmt ~ ";" | if | while | for | unroll }
 block      =  { "{" ~ (COMMENT | statement | error)* ~ "}" }
 
 attach_point      = @{ (identifier | ":" | "*")+ }

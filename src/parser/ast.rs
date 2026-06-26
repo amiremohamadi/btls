@@ -10,7 +10,7 @@ use super::{
     AssignOp, Assignment, BinaryExpr, Block, CDef, Call, Config, ConfigAssignment, Define, Else,
     ErrorPreamble, ErrorStatement, Expr, For, IdentKind, Identifier, If, Include, IntegerLiteral,
     Loop, Lvalue, MapAccess, Node, Preamble, Probe, Program, Statement, StringLiteral, UnaryExpr,
-    UnaryOp, UnknownPreamble, UnknownStatement, UnmatchedBrace, While,
+    UnaryOp, UnknownPreamble, UnknownStatement, UnmatchedBrace, Unroll, While,
 };
 
 #[derive(pest_derive::Parser)]
@@ -348,6 +348,21 @@ fn convert_for(pair: Pair<Rule>) -> Loop {
     }))
 }
 
+fn convert_unroll(pair: Pair<Rule>) -> Loop {
+    assert!(matches!(pair.as_rule(), Rule::unroll));
+    let span = pair.as_span();
+    let mut pairs = pair.into_inner();
+
+    let count = convert_int(pairs.next().unwrap());
+    let block = convert_block(pairs.next().unwrap());
+
+    Loop::Unroll(Box::new(Unroll {
+        count: Box::new(count),
+        block,
+        span,
+    }))
+}
+
 fn convert_statement(pair: Pair<Rule>) -> Statement {
     assert!(matches!(pair.as_rule(), Rule::statement));
     let pair = pair.into_inner().exactly_one().unwrap();
@@ -356,6 +371,7 @@ fn convert_statement(pair: Pair<Rule>) -> Statement {
         Rule::r#if => Statement::IfCond(Box::new(convert_if(pair))),
         Rule::r#while => Statement::Loop(Box::new(convert_while(pair))),
         Rule::r#for => Statement::Loop(Box::new(convert_for(pair))),
+        Rule::unroll => Statement::Loop(Box::new(convert_unroll(pair))),
         Rule::expr => Statement::Expr(Box::new(convert_expr(pair))),
         _ => unreachable!(),
     }
