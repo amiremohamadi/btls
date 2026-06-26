@@ -7,11 +7,11 @@ use pest::{
 };
 
 use super::{
-    AssignOp, Assignment, BinaryExpr, Block, CDef, Call, CastExpr, Config, ConfigAssignment,
-    Define, Else, ErrorPreamble, ErrorStatement, Expr, For, IdentKind, Identifier, If, Include,
-    IntegerLiteral, Loop, Lvalue, MapAccess, Node, Preamble, Probe, Program, Statement,
-    StringLiteral, UnaryExpr, UnaryOp, UnknownPreamble, UnknownStatement, UnmatchedBrace, Unroll,
-    While,
+    ArgNExpr, AssignOp, Assignment, BinaryExpr, Block, CDef, Call, CastExpr, Config,
+    ConfigAssignment, Define, Else, ErrorPreamble, ErrorStatement, Expr, For, IdentKind,
+    Identifier, If, Include, IntegerLiteral, Loop, Lvalue, MapAccess, Node, Preamble, Probe,
+    Program, Statement, StringLiteral, UnaryExpr, UnaryOp, UnknownPreamble, UnknownStatement,
+    UnmatchedBrace, Unroll, While,
 };
 
 #[derive(pest_derive::Parser)]
@@ -193,6 +193,7 @@ fn convert_primary_expr(pair: Pair<Rule>) -> Expr {
             let inner = pair.into_inner().exactly_one().unwrap();
             convert_expr(inner)
         }
+        Rule::arg_n => Expr::ArgN(Box::new(convert_arg_n(pair))),
         Rule::variable => convert_var_to_expr(pair),
         _ => unreachable!(),
     }
@@ -209,6 +210,12 @@ fn convert_cast(pair: Pair<Rule>) -> Expr {
         expr: Box::new(expr),
         span,
     }))
+}
+
+fn convert_arg_n(pair: Pair<Rule>) -> ArgNExpr {
+    let span = pair.as_span();
+    let index = pair.as_str().trim_start_matches("arg").parse().unwrap();
+    ArgNExpr { index, span }
 }
 
 fn convert_unary_op(op: &Pair<Rule>) -> UnaryOp {

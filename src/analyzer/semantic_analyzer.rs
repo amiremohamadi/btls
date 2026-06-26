@@ -475,7 +475,7 @@ impl ErrorChecker<'_> {
                     self.check_expr(key, scope);
                 }
             }
-            Expr::Integer(_) | Expr::String(_) => {}
+            Expr::Integer(_) | Expr::String(_) | Expr::ArgN(_) => {}
             Expr::Cast(cast) => {
                 self.check_expr(&cast.expr, scope);
             }

@@ -59,6 +59,7 @@ fn test_sanity() {
     parse_no_errors("BEGIN { for ($x : $y) { $var += 1; } }");
     parse_no_errors("BEGIN { unroll(3) { $var += 1; } }");
     parse_no_errors("BEGIN { $x = (uint64)1; }");
+    parse_no_errors("BEGIN { $x = (uint64)arg3; }");
     parse_no_errors("BEGIN { $x = (uint16) -1; }");
     parse_no_errors("BEGIN { $x = (int64 *)$y * 2; }");
     parse_no_errors("BEGIN { @map = 1 + 2; $var = -1; $var = +2; $var2 = @map + -1; }");

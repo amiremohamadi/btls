@@ -384,6 +384,7 @@ pub enum Expr<'a> {
     UnaryExpr(Box<UnaryExpr<'a>>),
     MapAccess(Box<MapAccess<'a>>),
     Cast(Box<CastExpr<'a>>),
+    ArgN(Box<ArgNExpr<'a>>),
 }
 
 impl<'a> Node<'a> for Expr<'a> {
@@ -405,6 +406,7 @@ impl<'a> Node<'a> for Expr<'a> {
             Self::UnaryExpr(expr) => vec![expr.as_node()],
             Self::MapAccess(access) => access.children(),
             Self::Cast(cast) => cast.children(),
+            Self::ArgN(arg) => vec![arg.as_node()],
         }
     }
 
@@ -418,6 +420,7 @@ impl<'a> Node<'a> for Expr<'a> {
             Self::UnaryExpr(expr) => expr.span(),
             Self::MapAccess(access) => access.span,
             Self::Cast(cast) => cast.span(),
+            Self::ArgN(arg) => arg.span(),
         }
     }
 }
@@ -436,6 +439,26 @@ impl<'a> Node<'a> for CastExpr<'a> {
 
     fn children(&self) -> Vec<&dyn Node<'a>> {
         vec![&*self.expr]
+    }
+
+    fn span(&self) -> Span<'a> {
+        self.span
+    }
+}
+
+#[derive(Debug)]
+pub struct ArgNExpr<'a> {
+    pub index: u64,
+    pub span: Span<'a>,
+}
+
+impl<'a> Node<'a> for ArgNExpr<'a> {
+    fn as_node(&self) -> &dyn Node<'a> {
+        self
+    }
+
+    fn children(&self) -> Vec<&dyn Node<'a>> {
+        vec![]
     }
 
     fn span(&self) -> Span<'a> {

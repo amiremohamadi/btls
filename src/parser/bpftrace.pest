@@ -13,43 +13,45 @@ primary   =  {
   | call
   | cast
   | paren_expr
+  | arg_n
   | identifier
   | variable
 }
 
-cast      =  { "(" ~ type_name ~ ")" ~ expr }
-paren_expr = { "(" ~ expr ~ ")" }
-type_name = { identifier ~ "*"* }
+cast        =  { "(" ~ type_name ~ ")" ~ expr }
+paren_expr  = { "(" ~ expr ~ ")" }
+type_name   = { identifier ~ "*"* }
+arg_n       = @{ "arg" ~ ASCII_DIGIT+ }
 scratch_var = { "$" ~ identifier }
 map_var     = { "@" ~ (identifier ~ map_keys? | map_keys)? }
 variable    = { scratch_var | map_var }
-map_keys  =  { "[" ~ expr_list ~ "]" }
-expr      =  { prefix* ~ primary ~ postfix* ~ (infix ~ prefix* ~ primary ~ postfix*)* }
-expr_list =  { expr ~ ("," ~ expr)* }
-infix     = _{ add | sub | mul | div | mod | le | lt | ge | gt | eq | ne | and | or }
-prefix    = _{ not | inc_prefix | dec_prefix | neg | pos | deref }
-postfix   = _{ inc_postfix | dec_postfix }
-inc_prefix    =  { "++" }
-inc_postfix   =  { "++" }
-dec_prefix    =  { "--" }
-dec_postfix   =  { "--" }
-add       =  { "+" }
-sub       =  { "-" }
-mul       =  { "*" }
-div       =  { "/" }
-le        =  { "<=" }
-lt        =  { "<" }
-ge        =  { ">=" }
-gt        =  { ">" }
-eq        =  { "==" }
-ne        =  { "!=" }
-and       =  { "&&" }
-or        =  { "||" }
-not       =  { "!" }
-neg       =  { "-" }
-pos       =  { "+" }
-mod       =  { "%" }
-deref     =  { "*" }
+map_keys    =  { "[" ~ expr_list ~ "]" }
+expr        =  { prefix* ~ primary ~ postfix* ~ (infix ~ prefix* ~ primary ~ postfix*)* }
+expr_list   =  { expr ~ ("," ~ expr)* }
+infix       = _{ add | sub | mul | div | mod | le | lt | ge | gt | eq | ne | and | or }
+prefix      = _{ not | inc_prefix | dec_prefix | neg | pos | deref }
+postfix     = _{ inc_postfix | dec_postfix }
+inc_prefix  =  { "++" }
+inc_postfix =  { "++" }
+dec_prefix  =  { "--" }
+dec_postfix =  { "--" }
+add         =  { "+" }
+sub         =  { "-" }
+mul         =  { "*" }
+div         =  { "/" }
+le          =  { "<=" }
+lt          =  { "<" }
+ge          =  { ">=" }
+gt          =  { ">" }
+eq          =  { "==" }
+ne          =  { "!=" }
+and         =  { "&&" }
+or          =  { "||" }
+not         =  { "!" }
+neg         =  { "-" }
+pos         =  { "+" }
+mod         =  { "%" }
+deref       =  { "*" }
 
 assign_op  =  { "=" | "+=" | "-=" }
 assignment =  { variable ~ assign_op ~ expr }
