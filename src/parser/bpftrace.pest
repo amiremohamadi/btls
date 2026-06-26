@@ -46,7 +46,8 @@ pos       =  { "+" }
 assign_op  =  { "=" | "+=" | "-=" }
 assignment =  { variable ~ assign_op ~ expr }
 call       =  { identifier ~ "(" ~ expr_list? ~ ")" }
-if         =  { "if" ~ "(" ~ expr ~ ")" ~ block }
+if         =  { "if" ~ "(" ~ expr ~ ")" ~ block ~ else? }
+else       =  { "else" ~ (if | block) }
 while      =  { "while" ~ "(" ~ expr ~ ")" ~ block }
 for        =  { "for" ~ "(" ~ expr ~ ":" ~ expr ~ ")" ~ block }
 base_stmt  = _{ assignment | expr }

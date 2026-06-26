@@ -7,7 +7,7 @@ use pest::{
 };
 
 use super::{
-    AssignOp, Assignment, BinaryExpr, Block, CDef, Call, Config, ConfigAssignment, Define,
+    AssignOp, Assignment, BinaryExpr, Block, CDef, Call, Config, ConfigAssignment, Define, Else,
     ErrorPreamble, ErrorStatement, Expr, For, IdentKind, Identifier, If, Include, IntegerLiteral,
     Loop, Lvalue, MapAccess, Node, Preamble, Probe, Program, Statement, StringLiteral, UnaryExpr,
     UnaryOp, UnknownPreamble, UnknownStatement, UnmatchedBrace, While,
@@ -296,11 +296,23 @@ fn convert_if(pair: Pair<Rule>) -> If {
 
     let expr = convert_expr(pairs.next().unwrap());
     let block = convert_block(pairs.next().unwrap());
+    let else_branch = pairs.next().map(convert_else).map(Box::new);
 
     If {
         condition: Box::new(expr),
         block,
+        else_branch,
         span,
+    }
+}
+
+fn convert_else(pair: Pair<Rule>) -> Else {
+    assert!(matches!(pair.as_rule(), Rule::r#else));
+    let pair = pair.into_inner().exactly_one().unwrap();
+    match pair.as_rule() {
+        Rule::block => Else::Block(convert_block(pair)),
+        Rule::r#if => Else::IfCond(Box::new(convert_if(pair))),
+        _ => unreachable!(),
     }
 }
 

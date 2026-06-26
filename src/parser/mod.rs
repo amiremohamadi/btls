@@ -542,6 +542,7 @@ impl<'a> Node<'a> for For<'a> {
 pub struct If<'a> {
     pub condition: Box<Expr<'a>>,
     pub block: Block<'a>,
+    pub else_branch: Option<Box<Else<'a>>>,
     pub span: Span<'a>,
 }
 
@@ -551,11 +552,41 @@ impl<'a> Node<'a> for If<'a> {
     }
 
     fn children(&self) -> Vec<&dyn Node<'a>> {
-        vec![&*self.condition, &self.block]
+        let mut children: Vec<&dyn Node<'a>> = vec![&*self.condition, &self.block];
+        if let Some(else_branch) = &self.else_branch {
+            children.push(else_branch.as_node());
+        }
+        children
     }
 
     fn span(&self) -> Span<'a> {
         self.span
+    }
+}
+
+#[derive(Debug)]
+pub enum Else<'a> {
+    IfCond(Box<If<'a>>),
+    Block(Block<'a>),
+}
+
+impl<'a> Node<'a> for Else<'a> {
+    fn as_node(&self) -> &dyn Node<'a> {
+        self
+    }
+
+    fn children(&self) -> Vec<&dyn Node<'a>> {
+        match self {
+            Self::IfCond(c) => vec![c.as_node()],
+            Self::Block(block) => vec![block],
+        }
+    }
+
+    fn span(&self) -> Span<'a> {
+        match self {
+            Self::IfCond(c) => c.span(),
+            Self::Block(block) => block.span(),
+        }
     }
 }
 

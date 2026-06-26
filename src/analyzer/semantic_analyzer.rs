@@ -3,8 +3,8 @@ use std::sync::Arc;
 use crate::builtins::BUILTINS;
 use crate::common::utils::OwnedLineIndex;
 use crate::parser::{
-    Block, CDef, Expr, IdentKind, Loop, Lvalue, Node, Preamble, Probe, Program, Statement, UnaryOp,
-    UndefinedFunc, UndefinedIdent,
+    Block, CDef, Else, Expr, IdentKind, Loop, Lvalue, Node, Preamble, Probe, Program, Statement,
+    UnaryOp, UndefinedFunc, UndefinedIdent,
 };
 use crate::server::Context;
 use crate::storage::Document;
@@ -149,6 +149,9 @@ fn collect_maps_in_block(block: &Block, maps: &mut Vec<RawVar>) {
             },
             Statement::IfCond(if_cond) => {
                 collect_maps_in_block(&if_cond.block, maps);
+                if let Some(else_branch) = &if_cond.else_branch {
+                    collect_maps_in_else(else_branch, maps);
+                }
             }
             Statement::Expr(expr) => {
                 if let Expr::UnaryExpr(unary) = expr.as_ref() {
@@ -170,6 +173,18 @@ fn collect_maps_in_block(block: &Block, maps: &mut Vec<RawVar>) {
             }
             Statement::Error(_) => {}
         }
+    }
+}
+
+fn collect_maps_in_else(else_branch: &Else, maps: &mut Vec<RawVar>) {
+    match else_branch {
+        Else::IfCond(if_cond) => {
+            collect_maps_in_block(&if_cond.block, maps);
+            if let Some(next_else) = &if_cond.else_branch {
+                collect_maps_in_else(next_else, maps);
+            }
+        }
+        Else::Block(block) => collect_maps_in_block(block, maps),
     }
 }
 
@@ -248,6 +263,9 @@ fn collect_vars_in_block(block: &Block, offset: usize, vars: &mut Vec<RawVar>) {
                 if if_cond.block.span().start() <= offset && offset < if_cond.block.span().end() {
                     collect_vars_in_block(&if_cond.block, offset, vars);
                 }
+                if let Some(else_branch) = &if_cond.else_branch {
+                    collect_vars_in_else(else_branch, offset, vars);
+                }
             }
             Statement::Expr(expr) => {
                 if let Expr::UnaryExpr(unary) = expr.as_ref() {
@@ -268,6 +286,24 @@ fn collect_vars_in_block(block: &Block, offset: usize, vars: &mut Vec<RawVar>) {
                 }
             }
             Statement::Error(_) => {}
+        }
+    }
+}
+
+fn collect_vars_in_else(else_branch: &Else, offset: usize, vars: &mut Vec<RawVar>) {
+    match else_branch {
+        Else::IfCond(if_cond) => {
+            if if_cond.block.span().start() <= offset && offset < if_cond.block.span().end() {
+                collect_vars_in_block(&if_cond.block, offset, vars);
+            }
+            if let Some(next_else) = &if_cond.else_branch {
+                collect_vars_in_else(next_else, offset, vars);
+            }
+        }
+        Else::Block(block) => {
+            if block.span().start() <= offset && offset < block.span().end() {
+                collect_vars_in_block(block, offset, vars);
+            }
         }
     }
 }
@@ -352,6 +388,9 @@ impl ErrorChecker<'_> {
                     self.check_expr(&if_cond.condition, scope);
                     let mut inner = scope.clone();
                     self.check_block(&if_cond.block, &mut inner);
+                    if let Some(else_branch) = &if_cond.else_branch {
+                        self.check_else(else_branch, scope);
+                    }
                 }
                 Statement::Expr(expr) => {
                     self.check_expr(expr, scope);
@@ -427,6 +466,23 @@ impl ErrorChecker<'_> {
             Expr::Integer(_) | Expr::String(_) => {}
         }
     }
+
+    fn check_else(&mut self, else_branch: &Else, scope: &[String]) {
+        match else_branch {
+            Else::IfCond(if_cond) => {
+                self.check_expr(&if_cond.condition, scope);
+                let mut inner = scope.to_vec();
+                self.check_block(&if_cond.block, &mut inner);
+                if let Some(next_else) = &if_cond.else_branch {
+                    self.check_else(next_else, scope);
+                }
+            }
+            Else::Block(block) => {
+                let mut inner = scope.to_vec();
+                self.check_block(block, &mut inner);
+            }
+        }
+    }
 }
 
 pub struct SemanticAnalyzer;
@@ -494,6 +550,9 @@ impl SemanticAnalyzer {
                 }
                 Statement::IfCond(if_cond) => {
                     Self::walk_vars_in_block(&if_cond.block, variables);
+                    if let Some(else_branch) = &if_cond.else_branch {
+                        Self::walk_vars_in_else(else_branch, variables);
+                    }
                 }
                 Statement::Expr(expr) => {
                     if let Expr::UnaryExpr(unary) = expr.as_ref() {
@@ -520,6 +579,18 @@ impl SemanticAnalyzer {
                 }
                 Statement::Error(_) => {}
             }
+        }
+    }
+
+    fn walk_vars_in_else(else_branch: &Else, variables: &mut Vec<String>) {
+        match else_branch {
+            Else::IfCond(if_cond) => {
+                Self::walk_vars_in_block(&if_cond.block, variables);
+                if let Some(next_else) = &if_cond.else_branch {
+                    Self::walk_vars_in_else(next_else, variables);
+                }
+            }
+            Else::Block(block) => Self::walk_vars_in_block(block, variables),
         }
     }
 
