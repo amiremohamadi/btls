@@ -58,6 +58,14 @@ fn test_sanity() {
     parse_no_errors("BEGIN { @map = 1 + 2; $var = -1; $var = +2; $var2 = @map + -1; }");
     parse_no_errors("BEGIN { $var++; --$var; }");
     parse_no_errors("BEGIN { $x++; ++$x; $x--; --$x; @map++; ++@map; }");
+    parse_no_errors("BEGIN { @map[1] = 2; }");
+    parse_no_errors("BEGIN { @map[1] = @m2[$x]; }");
+    parse_no_errors("BEGIN { @map[1, 2] = 3; }");
+    parse_no_errors("BEGIN { @[$x] = 1; }");
+    parse_no_errors("BEGIN { $x = @map[1]; }");
+    parse_no_errors("BEGIN { @map[1]++; }");
+    parse_no_errors("BEGIN { ++@map[1]; }");
+    parse_no_errors("BEGIN { @map[@n] = $x; }");
 
     parse_no_errors("#include <linux/sched.h>");
     parse_no_errors("#define MAX 100");
@@ -65,6 +73,7 @@ fn test_sanity() {
     parse_no_errors("#include <linux/sched.h>\n#define MAX 100\nBEGIN { $x = MAX; }");
 
     parse_has_errors("#define ADD(a, b) ((a) + (b))");
+    parse_has_errors("BEGIN { @m[] = 2; }");
     parse_has_errors("chertopert");
     parse_has_errors("12313");
     parse_has_errors("s\n12313\nBEGIN { @c = 0; }");
@@ -188,4 +197,26 @@ fn test_loops() {
         .len();
 
     assert_eq!(loops, 2);
+}
+
+#[test]
+fn test_map() {
+    let prog = parse("BEGIN { @map[1] = 2; }").unwrap();
+
+    let Preamble::Probe(probe) = &prog.preambles[0] else {
+        panic!("not a probe!");
+    };
+
+    assert_eq!(probe.block.statements.len(), 1);
+    let Statement::Assignment(assign) = &probe.block.statements[0] else {
+        panic!("not an assignment!");
+    };
+
+    assert!(matches!(&assign.lvalue, Lvalue::MapAccess(_)));
+    if let Lvalue::MapAccess(access) = &assign.lvalue {
+        assert_eq!(access.map.name, "map");
+        assert_eq!(access.map.kind, IdentKind::Map);
+        assert_eq!(access.keys.len(), 1);
+        assert!(matches!(access.keys[0], Expr::Integer(_)));
+    }
 }

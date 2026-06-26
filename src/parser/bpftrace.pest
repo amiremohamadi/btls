@@ -14,9 +14,12 @@ primary   =  {
   | identifier
   | variable
 }
-variable  =  { "$" ~ identifier | "@" ~ identifier? }
+scratch_var = { "$" ~ identifier }
+map_var     = { "@" ~ (identifier ~ map_keys? | map_keys)? }
+variable    = { scratch_var | map_var }
+map_keys  =  { "[" ~ expr_list ~ "]" }
 expr      =  { prefix* ~ primary ~ postfix* ~ (infix ~ prefix* ~ primary ~ postfix*)* }
-expr_list =  { (expr ~ ("," ~ expr)*)? }
+expr_list =  { expr ~ ("," ~ expr)* }
 infix     = _{ add | sub | mul | div | le | lt | ge | gt | eq | ne | and | or }
 prefix    = _{ not | inc_prefix | dec_prefix | neg | pos }
 postfix   = _{ inc_postfix | dec_postfix }
@@ -42,7 +45,7 @@ pos       =  { "+" }
 
 assign_op  =  { "=" | "+=" | "-=" }
 assignment =  { variable ~ assign_op ~ expr }
-call       =  { identifier ~ "(" ~ expr_list ~ ")" }
+call       =  { identifier ~ "(" ~ expr_list? ~ ")" }
 if         =  { "if" ~ "(" ~ expr ~ ")" ~ block }
 while      =  { "while" ~ "(" ~ expr ~ ")" ~ block }
 for        =  { "for" ~ "(" ~ expr ~ ":" ~ expr ~ ")" ~ block }

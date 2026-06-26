@@ -9,8 +9,8 @@ use pest::{
 use super::{
     AssignOp, Assignment, BinaryExpr, Block, CDef, Call, Config, ConfigAssignment, Define,
     ErrorPreamble, ErrorStatement, Expr, For, IdentKind, Identifier, If, Include, IntegerLiteral,
-    Loop, Lvalue, Node, Preamble, Probe, Program, Statement, StringLiteral, UnaryExpr, UnaryOp,
-    UnknownPreamble, UnknownStatement, UnmatchedBrace, While,
+    Loop, Lvalue, MapAccess, Node, Preamble, Probe, Program, Statement, StringLiteral, UnaryExpr,
+    UnaryOp, UnknownPreamble, UnknownStatement, UnmatchedBrace, While,
 };
 
 #[derive(pest_derive::Parser)]
@@ -43,26 +43,121 @@ fn convert_ident(pair: Pair<Rule>) -> Identifier {
     }
 }
 
-fn convert_var(pair: Pair<Rule>) -> Identifier {
+fn convert_var_to_expr(pair: Pair<Rule>) -> Expr {
     assert!(matches!(pair.as_rule(), Rule::variable));
-    let var_str = pair.as_str();
-    let kind = if var_str.starts_with('$') {
-        IdentKind::Scratch
-    } else {
-        IdentKind::Map
-    };
     let span = pair.as_span();
-    match pair.into_inner().next() {
-        Some(inner) => {
-            let mut ident = convert_ident(inner);
-            ident.kind = kind;
-            ident
+    let inner = pair.into_inner().exactly_one().unwrap();
+    match inner.as_rule() {
+        Rule::scratch_var => {
+            let ident = convert_ident(inner.into_inner().exactly_one().unwrap());
+            Expr::Identifier(Box::new(Identifier {
+                kind: IdentKind::Scratch,
+                ..ident
+            }))
         }
-        None => Identifier {
+        Rule::map_var => convert_map_var_to_expr(inner, span),
+        _ => unreachable!(),
+    }
+}
+
+fn convert_map_var_to_expr<'a>(pair: Pair<'a, Rule>, span: Span<'a>) -> Expr<'a> {
+    assert!(matches!(pair.as_rule(), Rule::map_var));
+    let mut inner = pair.into_inner();
+    let Some(first) = inner.next() else {
+        return Expr::Identifier(Box::new(Identifier {
             name: "",
             span,
-            kind,
-        },
+            kind: IdentKind::Map,
+        }));
+    };
+    match first.as_rule() {
+        Rule::identifier => {
+            let mut ident = convert_ident(first);
+            ident.kind = IdentKind::Map;
+            if let Some(keys_pair) = inner.next() {
+                let keys = convert_expr_list(keys_pair.into_inner().exactly_one().unwrap());
+                Expr::MapAccess(Box::new(MapAccess {
+                    map: ident,
+                    keys,
+                    span,
+                }))
+            } else {
+                Expr::Identifier(Box::new(ident))
+            }
+        }
+        Rule::map_keys => {
+            let ident = Identifier {
+                name: "",
+                span,
+                kind: IdentKind::Map,
+            };
+            let keys = convert_expr_list(first.into_inner().exactly_one().unwrap());
+            Expr::MapAccess(Box::new(MapAccess {
+                map: ident,
+                keys,
+                span,
+            }))
+        }
+        _ => unreachable!(),
+    }
+}
+
+fn convert_var_to_lvalue(pair: Pair<Rule>) -> Lvalue {
+    assert!(matches!(pair.as_rule(), Rule::variable));
+    let span = pair.as_span();
+    let inner = pair.into_inner().exactly_one().unwrap();
+    match inner.as_rule() {
+        Rule::scratch_var => {
+            let ident = convert_ident(inner.into_inner().exactly_one().unwrap());
+            Lvalue::Identifier(Box::new(Identifier {
+                kind: IdentKind::Scratch,
+                ..ident
+            }))
+        }
+        Rule::map_var => convert_map_var_to_lvalue(inner, span),
+        _ => unreachable!(),
+    }
+}
+
+fn convert_map_var_to_lvalue<'a>(pair: Pair<'a, Rule>, span: Span<'a>) -> Lvalue<'a> {
+    assert!(matches!(pair.as_rule(), Rule::map_var));
+    let mut inner = pair.into_inner();
+    let Some(first) = inner.next() else {
+        return Lvalue::Identifier(Box::new(Identifier {
+            name: "",
+            span,
+            kind: IdentKind::Map,
+        }));
+    };
+    match first.as_rule() {
+        Rule::identifier => {
+            let mut ident = convert_ident(first);
+            ident.kind = IdentKind::Map;
+            if let Some(keys_pair) = inner.next() {
+                let keys = convert_expr_list(keys_pair.into_inner().exactly_one().unwrap());
+                Lvalue::MapAccess(Box::new(MapAccess {
+                    map: ident,
+                    keys,
+                    span,
+                }))
+            } else {
+                Lvalue::Identifier(Box::new(ident))
+            }
+        }
+        Rule::map_keys => {
+            let ident = Identifier {
+                name: "",
+                span,
+                kind: IdentKind::Map,
+            };
+            let keys = convert_expr_list(first.into_inner().exactly_one().unwrap());
+            Lvalue::MapAccess(Box::new(MapAccess {
+                map: ident,
+                keys,
+                span,
+            }))
+        }
+        _ => unreachable!(),
     }
 }
 
@@ -78,17 +173,10 @@ fn convert_assign_op(pair: Pair<Rule>) -> AssignOp {
 
 fn convert_expr_list(pair: Pair<Rule>) -> Vec<Expr> {
     assert!(matches!(pair.as_rule(), Rule::expr_list));
-    let mut pairs = pair.into_inner();
-    let Some(first) = pairs.next() else {
-        return Vec::new();
-    };
-
-    let mut exprs = vec![convert_expr(first)];
-    pairs.tuples().for_each(|(_, expr)| {
-        exprs.push(convert_expr(expr));
-    });
-
-    exprs
+    pair.into_inner()
+        .filter(|p| matches!(p.as_rule(), Rule::expr))
+        .map(convert_expr)
+        .collect()
 }
 
 fn convert_primary_expr(pair: Pair<Rule>) -> Expr {
@@ -99,7 +187,7 @@ fn convert_primary_expr(pair: Pair<Rule>) -> Expr {
         Rule::number => Expr::Integer(Box::new(convert_int(pair))),
         Rule::string => Expr::String(Box::new(convert_str(pair))),
         Rule::call => Expr::Call(Box::new(convert_call(pair))),
-        Rule::variable => Expr::Identifier(Box::new(convert_var(pair))),
+        Rule::variable => convert_var_to_expr(pair),
         _ => unreachable!(),
     }
 }
@@ -178,25 +266,15 @@ fn convert_expr(pair: Pair<Rule>) -> Expr {
         .parse(pairs)
 }
 
-fn convert_lvalue(pair: Pair<Rule>) -> Lvalue {
-    assert!(matches!(pair.as_rule(), Rule::identifier));
-    let pair = pair.into_inner().exactly_one().unwrap();
-    match pair.as_rule() {
-        Rule::identifier => Lvalue::Identifier(Box::new(convert_ident(pair))),
-        _ => unreachable!(),
-    }
-}
-
 fn convert_assignment(pair: Pair<Rule>) -> Assignment {
     assert!(matches!(pair.as_rule(), Rule::assignment));
     let span = pair.as_span();
     let (lvalue, op, rvalue) = pair.into_inner().collect_tuple().unwrap();
-    // let lvalue = convert_lvalue(lvalue);
-    let lvalue = convert_var(lvalue);
+    let lvalue = convert_var_to_lvalue(lvalue);
     let _op = convert_assign_op(op);
     let rvalue = convert_expr(rvalue);
     Assignment {
-        lvalue: Lvalue::Identifier(Box::new(lvalue)),
+        lvalue,
         rvalue: Box::new(rvalue),
         span,
     }
@@ -207,7 +285,7 @@ fn convert_call(pair: Pair<Rule>) -> Call {
     let span = pair.as_span();
     let mut pairs = pair.into_inner();
     let func = convert_ident(pairs.next().unwrap());
-    let args = convert_expr_list(pairs.next().unwrap());
+    let args = pairs.next().map(convert_expr_list).unwrap_or_default();
     Call { func, args, span }
 }
 
