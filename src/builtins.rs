@@ -17,6 +17,32 @@ pub struct ConfigVar {
     pub values: &'static [&'static str],
 }
 
+macro_rules! keyword {
+    ($name:expr) => {
+        BuiltinSymbol {
+            name: $name,
+            detail: "",
+            documentation: "",
+        }
+    };
+}
+
+pub const SYNTAX_KEYWORDS: &[BuiltinSymbol] = &[
+    keyword!("break"),
+    keyword!("config"),
+    keyword!("continue"),
+    keyword!("else"),
+    keyword!("for"),
+    keyword!("if"),
+    keyword!("import"),
+    keyword!("let"),
+    keyword!("macro"),
+    keyword!("offsetof"),
+    keyword!("sizeof"),
+    keyword!("unroll"),
+    keyword!("while"),
+];
+
 pub const BUILTINS: BuiltinSymbols = include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/target/builtins.gen.rs"
