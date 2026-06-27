@@ -5,6 +5,7 @@ mod common;
 mod completion_provider;
 mod config;
 mod diagnostic_provider;
+mod navigation_provider;
 mod parser;
 mod server;
 mod storage;

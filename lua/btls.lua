@@ -21,8 +21,9 @@ end
 
 vim.api.nvim_create_autocmd("FileType", {
     pattern = "bpftrace",
-    callback = function()
-        vim.lsp.buf_attach_client(0, client)
+    callback = function(event)
+        vim.lsp.buf_attach_client(event.buf, client)
+        vim.keymap.set('n', 'gd', vim.lsp.buf.definition, { buffer = event.buf })
     end
 })
 

@@ -6,8 +6,9 @@ use tower_lsp::{
     jsonrpc::Result,
     lsp_types::{
         CompletionOptions, CompletionParams, CompletionResponse, DidChangeTextDocumentParams,
-        DidOpenTextDocumentParams, InitializeParams, InitializeResult, InitializedParams,
-        MessageType, ServerCapabilities,
+        DidOpenTextDocumentParams, GotoDefinitionParams, GotoDefinitionResponse, InitializeParams,
+        InitializeResult, InitializedParams, Location, MessageType, OneOf, ReferenceParams,
+        ServerCapabilities,
     },
 };
 
@@ -27,6 +28,8 @@ impl LanguageServer for Backend {
         Ok(InitializeResult {
             capabilities: ServerCapabilities {
                 completion_provider: Some(CompletionOptions::default()),
+                definition_provider: Some(OneOf::Left(true)),
+                references_provider: Some(OneOf::Left(true)),
                 text_document_sync: Some(tower_lsp::lsp_types::TextDocumentSyncCapability::Kind(
                     tower_lsp::lsp_types::TextDocumentSyncKind::FULL,
                 )),
@@ -57,6 +60,34 @@ impl LanguageServer for Backend {
         };
         let pos = params.text_document_position.position;
         super::completion_provider::completion(&self.context, &path, pos).await
+    }
+
+    async fn goto_definition(
+        &self,
+        params: GotoDefinitionParams,
+    ) -> Result<Option<GotoDefinitionResponse>> {
+        let Ok(path) = params
+            .text_document_position_params
+            .text_document
+            .uri
+            .to_file_path()
+        else {
+            return Ok(None);
+        };
+        let pos = params.text_document_position_params.position;
+        super::navigation_provider::goto_definition(&self.context, &path, pos).await
+    }
+
+    async fn references(&self, params: ReferenceParams) -> Result<Option<Vec<Location>>> {
+        let Ok(path) = params
+            .text_document_position
+            .text_document
+            .uri
+            .to_file_path()
+        else {
+            return Ok(None);
+        };
+        super::navigation_provider::references(&self.context, &path, params).await
     }
 
     async fn did_open(&self, params: DidOpenTextDocumentParams) {
