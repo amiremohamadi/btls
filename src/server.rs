@@ -27,7 +27,10 @@ impl LanguageServer for Backend {
     async fn initialize(&self, _: InitializeParams) -> Result<InitializeResult> {
         Ok(InitializeResult {
             capabilities: ServerCapabilities {
-                completion_provider: Some(CompletionOptions::default()),
+                completion_provider: Some(CompletionOptions {
+                    trigger_characters: Some(vec![".".to_string(), ">".to_string()]),
+                    ..Default::default()
+                }),
                 definition_provider: Some(OneOf::Left(true)),
                 references_provider: Some(OneOf::Left(true)),
                 text_document_sync: Some(tower_lsp::lsp_types::TextDocumentSyncCapability::Kind(

@@ -1,15 +1,17 @@
+use std::fmt;
 use std::sync::Arc;
 
 use crate::builtins::BUILTINS;
 use crate::common::utils::OwnedLineIndex;
 use crate::parser::{
     Block, CDef, Else, Expr, IdentKind, Loop, Lvalue, Node, Preamble, Probe, Program, Statement,
-    UnaryOp, UndefinedFunc, UndefinedIdent,
+    TypeKind, TypeName, UnaryOp, UndefinedFunc, UndefinedIdent,
 };
 use crate::server::Context;
 use crate::storage::Document;
 use anyhow::Result;
 use pest::Span;
+use std::collections::HashMap;
 use std::path::Path;
 use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity};
 
@@ -99,6 +101,192 @@ fn collect_defines(program: &Program) -> Vec<RawVar> {
     defines
 }
 
+#[derive(Debug, Clone)]
+pub struct FieldInfo {
+    pub name: String,
+    pub type_name: TypeInfo,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TypeInfo {
+    Builtin {
+        name: String,
+        pointers: usize,
+    },
+    StructLike {
+        kind: TypeKind,
+        name: String,
+        pointers: usize,
+    },
+    Invalid {
+        name: String,
+        pointers: usize,
+    },
+}
+
+impl TypeInfo {
+    pub fn name(&self) -> &str {
+        match self {
+            Self::Builtin { name, .. }
+            | Self::StructLike { name, .. }
+            | Self::Invalid { name, .. } => name,
+        }
+    }
+
+    pub fn pointers(&self) -> usize {
+        match self {
+            Self::Builtin { pointers, .. }
+            | Self::StructLike { pointers, .. }
+            | Self::Invalid { pointers, .. } => *pointers,
+        }
+    }
+}
+
+impl fmt::Display for TypeInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.pointers() > 0 {
+            write!(f, "{} {}", self.name(), "*".repeat(self.pointers()))
+        } else {
+            write!(f, "{}", self.name())
+        }
+    }
+}
+
+impl<'a> From<&'a TypeName<'a>> for TypeInfo {
+    fn from(type_name: &'a TypeName<'a>) -> Self {
+        match type_name.kind {
+            TypeKind::Builtin => TypeInfo::Builtin {
+                name: type_name.name.to_string(),
+                pointers: type_name.pointers,
+            },
+            TypeKind::Struct | TypeKind::Union => TypeInfo::StructLike {
+                kind: type_name.kind,
+                name: type_name.name.to_string(),
+                pointers: type_name.pointers,
+            },
+            TypeKind::Invalid => TypeInfo::Invalid {
+                name: type_name.name.to_string(),
+                pointers: type_name.pointers,
+            },
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct StructInfo {
+    pub fields: Vec<FieldInfo>,
+}
+
+pub fn collect_structs(program: &Program) -> HashMap<String, StructInfo> {
+    let mut structs = HashMap::new();
+    for preamble in &program.preambles {
+        if let Preamble::CDef(cdef) = preamble {
+            if let CDef::Struct(def) = cdef.as_ref() {
+                let info = StructInfo {
+                    fields: def
+                        .fields
+                        .iter()
+                        .filter(|f| f.type_name.validate(&structs))
+                        .map(|f| FieldInfo {
+                            name: f.name.name.to_string(),
+                            type_name: TypeInfo::from(&f.type_name),
+                        })
+                        .collect(),
+                };
+                structs.insert(def.name.name.to_string(), info);
+            }
+        }
+    }
+    structs
+}
+
+pub fn collect_var_types(program: &Program) -> HashMap<String, TypeInfo> {
+    let structs = collect_structs(program);
+    let mut types = HashMap::new();
+    for preamble in &program.preambles {
+        if let Preamble::Probe(probe) = preamble {
+            _collect_var_types(&probe.block, &structs, &mut types);
+        }
+    }
+    types
+}
+
+fn _collect_var_types(
+    block: &Block,
+    structs: &HashMap<String, StructInfo>,
+    types: &mut HashMap<String, TypeInfo>,
+) {
+    for stmt in &block.statements {
+        match stmt {
+            Statement::Assignment(assign, _) => {
+                if let Lvalue::Identifier(ident) = &assign.lvalue {
+                    if ident.kind == IdentKind::Scratch {
+                        if let Some(type_info) = resolve_expr_type(&assign.rvalue, structs, types) {
+                            types.insert(format!("${}", ident.name), type_info);
+                        }
+                    }
+                }
+            }
+            Statement::Loop(loop_stmt) => {
+                let block = match loop_stmt.as_ref() {
+                    Loop::For(for_loop) => &for_loop.block,
+                    Loop::While(w) => &w.block,
+                    Loop::Unroll(u) => &u.block,
+                };
+                _collect_var_types(block, structs, types);
+            }
+            Statement::IfCond(if_cond) => {
+                _collect_var_types(&if_cond.block, structs, types);
+
+                let mut next_else = if_cond.else_branch.as_deref();
+                while let Some(else_branch) = next_else {
+                    match else_branch {
+                        Else::IfCond(next_if) => {
+                            _collect_var_types(&next_if.block, structs, types);
+                            next_else = next_if.else_branch.as_deref();
+                        }
+                        Else::Block(block) => {
+                            _collect_var_types(block, structs, types);
+                            break;
+                        }
+                    }
+                }
+            }
+            Statement::Expr(_, _) | Statement::Error(_) => {}
+        }
+    }
+}
+
+pub fn resolve_expr_type(
+    expr: &Expr,
+    structs: &HashMap<String, StructInfo>,
+    var_types: &HashMap<String, TypeInfo>,
+) -> Option<TypeInfo> {
+    match expr {
+        Expr::Cast(cast) => Some(TypeInfo::from(&cast.type_name)),
+        Expr::Identifier(ident) if ident.kind == IdentKind::Scratch => {
+            var_types.get(&format!("${}", ident.name)).cloned()
+        }
+        Expr::UnaryExpr(u) if u.op == UnaryOp::Deref => {
+            resolve_expr_type(&u.expr, structs, var_types)
+        }
+        Expr::Field(fa) => {
+            let base_type = resolve_expr_type(&fa.base, structs, var_types)?;
+            let field = fa.field.as_ref()?;
+            match &base_type {
+                TypeInfo::StructLike { name, .. } => structs
+                    .get(name)?
+                    .fields
+                    .iter()
+                    .find(|f| f.name == field.name)
+                    .map(|f| f.type_name.clone()),
+                _ => None,
+            }
+        }
+        _ => None,
+    }
+}
+
 fn collect_global_maps(program: &Program) -> Vec<RawVar> {
     let mut maps = Vec::new();
     for preamble in &program.preambles {
@@ -113,7 +301,7 @@ fn collect_global_maps(program: &Program) -> Vec<RawVar> {
 fn collect_maps_in_block(block: &Block, maps: &mut Vec<RawVar>) {
     for stmt in &block.statements {
         match stmt {
-            Statement::Assignment(assign) => {
+            Statement::Assignment(assign, _) => {
                 let map_name = match &assign.lvalue {
                     Lvalue::Identifier(ident) if ident.kind == IdentKind::Map => ident.name,
                     Lvalue::MapAccess(access) => access.map.name,
@@ -156,7 +344,7 @@ fn collect_maps_in_block(block: &Block, maps: &mut Vec<RawVar>) {
                     collect_maps_in_else(else_branch, maps);
                 }
             }
-            Statement::Expr(expr) => {
+            Statement::Expr(expr, _) => {
                 if let Expr::UnaryExpr(unary) = expr.as_ref() {
                     if matches!(unary.op, UnaryOp::Inc | UnaryOp::Dec) {
                         let map_name = match unary.expr.as_ref() {
@@ -221,7 +409,7 @@ fn collect_vars_in_block(block: &Block, offset: usize, vars: &mut Vec<RawVar>) {
             break;
         }
         match stmt {
-            Statement::Assignment(assign) => {
+            Statement::Assignment(assign, _) => {
                 if let Some(ident) = match &assign.lvalue {
                     Lvalue::Identifier(ident) if ident.kind != IdentKind::Map => Some(ident),
                     _ => None,
@@ -275,7 +463,7 @@ fn collect_vars_in_block(block: &Block, offset: usize, vars: &mut Vec<RawVar>) {
                     collect_vars_in_else(else_branch, offset, vars);
                 }
             }
-            Statement::Expr(expr) => {
+            Statement::Expr(expr, _) => {
                 if let Expr::UnaryExpr(unary) = expr.as_ref() {
                     if matches!(unary.op, UnaryOp::Inc | UnaryOp::Dec) {
                         if let Some(ident) = match unary.expr.as_ref() {
@@ -319,6 +507,8 @@ fn collect_vars_in_else(else_branch: &Else, offset: usize, vars: &mut Vec<RawVar
 struct ErrorChecker<'a> {
     global_maps: &'a [VarInfo],
     defines: &'a [VarInfo],
+    struct_defs: &'a HashMap<String, StructInfo>,
+    var_types: &'a HashMap<String, TypeInfo>,
     line_index: &'a OwnedLineIndex,
     out: Vec<Diagnostic>,
 }
@@ -328,7 +518,24 @@ impl ErrorChecker<'_> {
         for preamble in &program.preambles {
             match preamble {
                 Preamble::Probe(probe) => self.check_probe(probe),
-                Preamble::CDef(_) | Preamble::Config(_) => {}
+                Preamble::CDef(cdef) => {
+                    if let CDef::Struct(def) = cdef.as_ref() {
+                        for field in &def.fields {
+                            if !field.type_name.validate(self.struct_defs) {
+                                self.out.push(Diagnostic {
+                                    range: self.line_index.range(field.span),
+                                    severity: Some(DiagnosticSeverity::ERROR),
+                                    message: format!(
+                                        "Unsupported field type \"{}\"",
+                                        field.type_name.text()
+                                    ),
+                                    ..Default::default()
+                                });
+                            }
+                        }
+                    }
+                }
+                Preamble::Config(_) => {}
                 Preamble::Error(e) => self.push_span_error(e.span(), e.diagnosis()),
             }
         }
@@ -349,6 +556,12 @@ impl ErrorChecker<'_> {
         }
     }
 
+    fn check_semicolon(&mut self, stmt: &Statement) {
+        if !stmt.has_semicolon() {
+            self.push_span_error(stmt.span(), "Expected ';' after statement".to_string());
+        }
+    }
+
     fn check_probe(&mut self, probe: &Probe) {
         let mut scope = Vec::new();
         if let Some(cond) = &probe.condition {
@@ -360,8 +573,9 @@ impl ErrorChecker<'_> {
     fn check_block(&mut self, block: &Block, scope: &mut Vec<String>) {
         for stmt in &block.statements {
             self.emit_diag(stmt);
+            self.check_semicolon(stmt);
             match stmt {
-                Statement::Assignment(assign) => {
+                Statement::Assignment(assign, _) => {
                     self.check_expr(&assign.rvalue, scope);
                     match &assign.lvalue {
                         Lvalue::Identifier(ident) if ident.kind != IdentKind::Map => {
@@ -404,7 +618,7 @@ impl ErrorChecker<'_> {
                         self.check_else(else_branch, scope);
                     }
                 }
-                Statement::Expr(expr) => {
+                Statement::Expr(expr, _) => {
                     self.check_expr(expr, scope);
                 }
                 Statement::Error(_) => {}
@@ -479,6 +693,44 @@ impl ErrorChecker<'_> {
             Expr::Cast(cast) => {
                 self.check_expr(&cast.expr, scope);
             }
+            Expr::Field(field) => {
+                self.check_expr(&field.base, scope);
+                let Some(member) = &field.field else {
+                    return;
+                };
+                let Some(base_type) =
+                    resolve_expr_type(&field.base, self.struct_defs, self.var_types)
+                else {
+                    return;
+                };
+                let TypeInfo::StructLike { name, .. } = &base_type else {
+                    self.out.push(Diagnostic {
+                        range: self.line_index.range(member.span),
+                        severity: Some(DiagnosticSeverity::ERROR),
+                        message: format!(
+                            "Field access is not supported on \"{}\"",
+                            base_type.name()
+                        ),
+                        ..Default::default()
+                    });
+                    return;
+                };
+                let Some(info) = self.struct_defs.get(name) else {
+                    return;
+                };
+                if !info.fields.iter().any(|decl| decl.name == member.name) {
+                    self.out.push(Diagnostic {
+                        range: self.line_index.range(member.span),
+                        severity: Some(DiagnosticSeverity::ERROR),
+                        message: format!(
+                            "\"{}\" has no field \"{}\"",
+                            base_type.name(),
+                            member.name
+                        ),
+                        ..Default::default()
+                    });
+                }
+            }
         }
     }
 
@@ -505,6 +757,8 @@ pub struct SemanticAnalyzer;
 pub struct AnalyzedFile {
     pub document: Arc<Document>,
     pub variables: Vec<String>,
+    pub struct_defs: HashMap<String, StructInfo>,
+    pub var_types: HashMap<String, TypeInfo>,
     diagnostics: Vec<Diagnostic>,
     ast_cell: OwnedAst,
 }
@@ -537,7 +791,7 @@ impl SemanticAnalyzer {
     fn walk_vars_in_block(block: &Block, variables: &mut Vec<String>) {
         for stmt in &block.statements {
             match stmt {
-                Statement::Assignment(a) => {
+                Statement::Assignment(a, _) => {
                     let prefix = match &a.lvalue {
                         Lvalue::Identifier(ident) => {
                             Some(format!("{}{}", var_prefix(ident.kind), ident.name))
@@ -572,7 +826,7 @@ impl SemanticAnalyzer {
                         Self::walk_vars_in_else(else_branch, variables);
                     }
                 }
-                Statement::Expr(expr) => {
+                Statement::Expr(expr, _) => {
                     if let Expr::UnaryExpr(unary) = expr.as_ref() {
                         if matches!(unary.op, UnaryOp::Inc | UnaryOp::Dec) {
                             match unary.expr.as_ref() {
@@ -616,11 +870,15 @@ impl SemanticAnalyzer {
         program: &Program,
         global_maps: &[VarInfo],
         defines: &[VarInfo],
+        struct_defs: &HashMap<String, StructInfo>,
+        var_types: &HashMap<String, TypeInfo>,
         line_index: &OwnedLineIndex,
     ) -> Vec<Diagnostic> {
         let mut checker = ErrorChecker {
             global_maps,
             defines,
+            struct_defs,
+            var_types,
             line_index,
             out: Vec::new(),
         };
@@ -637,13 +895,24 @@ impl SemanticAnalyzer {
         let program = ast_cell.program();
         let global_maps = merge_vars(collect_global_maps(program));
         let defines = merge_vars(collect_defines(program));
-        let diagnostics = Self::collect_errors(program, &global_maps, &defines, &line_index);
+        let struct_defs = collect_structs(program);
+        let var_types = collect_var_types(program);
+        let diagnostics = Self::collect_errors(
+            program,
+            &global_maps,
+            &defines,
+            &struct_defs,
+            &var_types,
+            &line_index,
+        );
         let variables = Self::walk_variables(program);
 
         Ok(AnalyzedFile {
             document,
             ast_cell,
             variables,
+            struct_defs,
+            var_types,
             diagnostics,
         })
     }

@@ -7,6 +7,15 @@ identifier = @{ (ASCII_ALPHANUMERIC | "_")+ }
 string     = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
 number     = @{ ASCII_DIGIT+ }
 
+struct_kw = { "struct" | "union" }
+ptr       = { "*" }
+type_name = { struct_kw? ~ identifier ~ ptr* }
+
+scratch_var = { "$" ~ identifier }
+map_var     = { "@" ~ (identifier ~ map_keys? | map_keys)? }
+variable    = { scratch_var | map_var }
+map_keys    =  { "[" ~ expr_list ~ "]" }
+
 primary   =  {
     string
   | number
@@ -20,25 +29,18 @@ primary   =  {
 
 cast        =  { "(" ~ type_name ~ ")" ~ expr }
 paren_expr  = { "(" ~ expr ~ ")" }
-type_name   = { identifier ~ "*"* }
 arg_n       = @{ "arg" ~ ASCII_DIGIT+ }
-scratch_var = { "$" ~ identifier }
-map_var     = { "@" ~ (identifier ~ map_keys? | map_keys)? }
-variable    = { scratch_var | map_var }
-map_keys    =  { "[" ~ expr_list ~ "]" }
-expr        =  { prefix* ~ primary ~ postfix* ~ (infix ~ prefix* ~ primary ~ postfix*)* }
-expr_list   =  { expr ~ ("," ~ expr)* }
+
 infix       = _{ add | sub | mul | div | mod | le | lt | ge | gt | eq | ne | and | or }
 prefix      = _{ not | inc_prefix | dec_prefix | neg | pos | deref }
-postfix     = _{ inc_postfix | dec_postfix }
-inc_prefix  =  { "++" }
-inc_postfix =  { "++" }
-dec_prefix  =  { "--" }
-dec_postfix =  { "--" }
+postfix     = _{ inc_postfix | dec_postfix | field_access }
+field_access = { ("->" | ".") ~ identifier? }
+
 add         =  { "+" }
 sub         =  { "-" }
 mul         =  { "*" }
 div         =  { "/" }
+mod         =  { "%" }
 le          =  { "<=" }
 lt          =  { "<" }
 ge          =  { ">=" }
@@ -50,8 +52,14 @@ or          =  { "||" }
 not         =  { "!" }
 neg         =  { "-" }
 pos         =  { "+" }
-mod         =  { "%" }
 deref       =  { "*" }
+inc_prefix  =  { "++" }
+inc_postfix =  { "++" }
+dec_prefix  =  { "--" }
+dec_postfix =  { "--" }
+
+expr      =  { prefix* ~ primary ~ postfix* ~ (infix ~ prefix* ~ primary ~ postfix*)* }
+expr_list =  { expr ~ ("," ~ expr)* }
 
 assign_op  =  { "=" | "+=" | "-=" }
 assignment =  { variable ~ assign_op ~ expr }
@@ -62,28 +70,29 @@ while      =  { "while" ~ "(" ~ expr ~ ")" ~ block }
 for        =  { "for" ~ "(" ~ expr ~ ":" ~ expr ~ ")" ~ block }
 unroll     =  { "unroll" ~ "(" ~ number ~ ")" ~ block }
 base_stmt  = _{ assignment | expr }
-statement  =  { base_stmt ~ ";" | if | while | for | unroll }
-block      =  { "{" ~ (COMMENT | statement | error)* ~ "}" }
+statement  =  { if | while | for | unroll | base_stmt ~ ";"? }
+block      =  { "{" ~ (COMMENT | statement | error)* ~ ("}" | EOI) }
 
 attach_point      = @{ (identifier | ":" | "*")+ }
 attach_point_list = { attach_point ~ ("," ~ attach_point)* }
 probe_condition   = { "/" ~ expr ~ "/" }
 probe             = { attach_point_list ~ probe_condition? ~ block }
 
-cdef         = { include | define }
+cdef         = { include | define | struct_def }
 include      = ${ "#include" ~ SPACE+ ~ include_path }
 include_path = @{ "<" ~ (!(">" | NEWLINE) ~ ANY)* ~ ">" }
 define       = ${ "#define" ~ SPACE+ ~ identifier ~ (SPACE+ ~ define_body)? }
 define_body  = @{ (!NEWLINE ~ ANY)+ }
+struct_def   = { struct_kw ~ identifier ~ "{" ~ (field_decl | COMMENT | error)* ~ "}" ~ ";"? }
+field_decl   = { type_name ~ identifier ~ array_suffix? ~ ";" }
+array_suffix = { "[" ~ number ~ "]" }
 
 cfg_value  = { identifier | number | string }
 cfg_assign = { identifier ~ "=" ~ cfg_value? ~ ";"? }
 cfg_block  = { "config" ~ "=" ~ "{" ~ (COMMENT | cfg_assign | error)* ~ "}" }
 
-preamble          = { cfg_block | probe | cdef }
-
-error        =  { rest_of_line }
-rest_of_line = @{ (!(NEWLINE | "}") ~ ANY)+ ~ NEWLINE? }
-
-unmatched_brace = { "}" }
-program         = { SOI ~ (COMMENT | preamble | error | unmatched_brace)* ~ EOI }
+preamble          = { cfg_block | cdef | probe }
+error             =  { rest_of_line }
+rest_of_line      = @{ (!(NEWLINE | "}") ~ ANY)+ ~ NEWLINE? }
+unmatched_brace   = { "}" }
+program           = { SOI ~ (COMMENT | preamble | error | unmatched_brace)* ~ EOI }
