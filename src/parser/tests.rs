@@ -124,6 +124,12 @@ fn test_sanity() {
         "config = { stack_mode=perf; max_map_keys=2 }",
         &[("stack_mode", "perf"), ("max_map_keys", "2")],
     );
+
+    // field access
+    parse_no_errors("BEGIN { $x = $f->pid; }");
+    parse_no_errors("BEGIN { $x = $f.pid; }");
+    parse_no_errors("BEGIN { $x = $a->b->c; }");
+    parse_no_errors("BEGIN { $x = ((struct Foo *)arg0)->pid; }");
 }
 
 #[test]
@@ -156,7 +162,7 @@ fn test_statements() {
     assert_eq!(probe.block.statements.len(), 5);
     assert!(matches!(
         probe.block.statements[0],
-        Statement::Assignment(_)
+        Statement::Assignment(_, _)
     ));
 }
 
@@ -177,7 +183,7 @@ fn test_calls() {
         panic!("not a probe!");
     };
     assert_eq!(probe.block.statements.len(), 6);
-    let Statement::Expr(call) = &probe.block.statements[1] else {
+    let Statement::Expr(call, _) = &probe.block.statements[1] else {
         panic!("not an expression!");
     };
     assert!(matches!(call.as_ref(), Expr::Call(_)));
@@ -207,6 +213,31 @@ fn test_loops() {
 }
 
 #[test]
+fn test_structs() {
+    parse_no_errors("struct Foo { int32 x; uint64 name; }");
+    parse_no_errors("struct Foo { int32 x; };");
+    parse_no_errors("union U { int32 a; uint64 b; }");
+    parse_no_errors("struct Nested { struct Foo *next; uint64 flags; }");
+    parse_no_errors("struct Foo { int32 x; }\nBEGIN { $f = (struct Foo *)curtask; }");
+
+    let prog = parse("struct Foo { int32 x; uint64 name; }").unwrap();
+    let Preamble::CDef(cdef) = &prog.preambles[0] else {
+        panic!("not a cdef!");
+    };
+    let CDef::Struct(def) = cdef.as_ref() else {
+        panic!("not a struct def!");
+    };
+    assert_eq!(def.name.name, "Foo");
+    assert_eq!(def.fields.len(), 2);
+    assert_eq!(def.fields[0].name.name, "x");
+    assert_eq!(def.fields[0].type_name.text(), "int32");
+    assert!(def.fields[0].type_name.is_builtin());
+    assert_eq!(def.fields[1].name.name, "name");
+    assert_eq!(def.fields[1].type_name.text(), "uint64");
+    assert!(def.fields[1].type_name.is_builtin());
+}
+
+#[test]
 fn test_map() {
     let prog = parse("BEGIN { @map[1] = 2; }").unwrap();
 
@@ -215,7 +246,7 @@ fn test_map() {
     };
 
     assert_eq!(probe.block.statements.len(), 1);
-    let Statement::Assignment(assign) = &probe.block.statements[0] else {
+    let Statement::Assignment(assign, _) = &probe.block.statements[0] else {
         panic!("not an assignment!");
     };
 

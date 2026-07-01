@@ -140,7 +140,7 @@ fn identifier_at_offset<'a>(
         }
 
         if let Some(stmt) = node.as_statement() {
-            if let Statement::Assignment(assign) = stmt {
+            if let Statement::Assignment(assign, _) = stmt {
                 match &assign.lvalue {
                     Lvalue::Identifier(ident) => {
                         if let Some(ident) = ident_at(ident, offset) {

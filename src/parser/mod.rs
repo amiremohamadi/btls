@@ -385,6 +385,7 @@ pub enum Expr<'a> {
     MapAccess(Box<MapAccess<'a>>),
     Cast(Box<CastExpr<'a>>),
     ArgN(Box<ArgNExpr<'a>>),
+    Field(Box<FieldAccess<'a>>),
 }
 
 impl<'a> Node<'a> for Expr<'a> {
@@ -407,6 +408,7 @@ impl<'a> Node<'a> for Expr<'a> {
             Self::MapAccess(access) => access.children(),
             Self::Cast(cast) => cast.children(),
             Self::ArgN(arg) => vec![arg.as_node()],
+            Self::Field(field) => field.children(),
         }
     }
 
@@ -421,13 +423,14 @@ impl<'a> Node<'a> for Expr<'a> {
             Self::MapAccess(access) => access.span,
             Self::Cast(cast) => cast.span(),
             Self::ArgN(arg) => arg.span(),
+            Self::Field(field) => field.span(),
         }
     }
 }
 
 #[derive(Debug)]
 pub struct CastExpr<'a> {
-    pub type_name: &'a str,
+    pub type_name: TypeName<'a>,
     pub expr: Box<Expr<'a>>,
     pub span: Span<'a>,
 }
@@ -439,6 +442,67 @@ impl<'a> Node<'a> for CastExpr<'a> {
 
     fn children(&self) -> Vec<&dyn Node<'a>> {
         vec![&*self.expr]
+    }
+
+    fn span(&self) -> Span<'a> {
+        self.span
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TypeKind {
+    Builtin,
+    Struct,
+    Union,
+    Invalid,
+}
+
+#[derive(Debug)]
+pub struct TypeName<'a> {
+    pub kind: TypeKind,
+    pub name: &'a str,
+    pub pointers: usize,
+    pub span: Span<'a>,
+}
+
+impl<'a> TypeName<'a> {
+    pub fn is_builtin(&self) -> bool {
+        self.kind == TypeKind::Builtin
+    }
+
+    pub fn text(&self) -> &'a str {
+        self.span.as_str().trim()
+    }
+
+    pub fn validate<T>(&self, structs: &std::collections::HashMap<String, T>) -> bool {
+        match self.kind {
+            TypeKind::Builtin => crate::builtins::DATA_TYPES
+                .iter()
+                .any(|ty| ty.name == self.name),
+            TypeKind::Struct | TypeKind::Union => structs.contains_key(self.name),
+            TypeKind::Invalid => false,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct FieldAccess<'a> {
+    pub base: Box<Expr<'a>>,
+    pub field: Option<Identifier<'a>>,
+    pub span: Span<'a>,
+}
+
+impl<'a> Node<'a> for FieldAccess<'a> {
+    fn as_node(&self) -> &dyn Node<'a> {
+        self
+    }
+
+    fn children(&self) -> Vec<&dyn Node<'a>> {
+        let mut children: Vec<&dyn Node<'a>> = vec![&*self.base];
+        if let Some(field) = &self.field {
+            children.push(field.as_node());
+        }
+        children
     }
 
     fn span(&self) -> Span<'a> {
@@ -665,10 +729,19 @@ impl<'a> Node<'a> for Else<'a> {
 #[derive(Debug)]
 pub enum Statement<'a> {
     Error(Box<ErrorStatement<'a>>),
-    Assignment(Box<Assignment<'a>>),
+    Assignment(Box<Assignment<'a>>, bool),
     IfCond(Box<If<'a>>),
     Loop(Box<Loop<'a>>),
-    Expr(Box<Expr<'a>>),
+    Expr(Box<Expr<'a>>, bool),
+}
+
+impl<'a> Statement<'a> {
+    pub fn has_semicolon(&self) -> bool {
+        match self {
+            Self::Assignment(_, b) | Self::Expr(_, b) => *b,
+            _ => true,
+        }
+    }
 }
 
 impl<'a> Node<'a> for Statement<'a> {
@@ -683,20 +756,20 @@ impl<'a> Node<'a> for Statement<'a> {
     fn children(&self) -> Vec<&dyn Node<'a>> {
         match self {
             Self::Error(e) => vec![e.as_node()],
-            Self::Assignment(assign) => vec![assign.as_node()],
+            Self::Assignment(assign, _) => vec![assign.as_node()],
             Self::IfCond(c) => vec![c.as_node()],
             Self::Loop(c) => vec![c.as_node()],
-            Self::Expr(e) => vec![e.as_node()],
+            Self::Expr(e, _) => vec![e.as_node()],
         }
     }
 
     fn span(&self) -> Span<'a> {
         match self {
             Self::Error(e) => e.span(),
-            Self::Assignment(assign) => assign.span(),
+            Self::Assignment(assign, _) => assign.span(),
             Self::IfCond(c) => c.span(),
             Self::Loop(c) => c.span(),
-            Self::Expr(e) => e.span(),
+            Self::Expr(e, _) => e.span(),
         }
     }
 }
@@ -879,6 +952,7 @@ impl<'a> Node<'a> for Preamble<'a> {
 pub enum CDef<'a> {
     Include(Box<Include<'a>>),
     Define(Box<Define<'a>>),
+    Struct(Box<StructDef<'a>>),
 }
 
 impl<'a> Node<'a> for CDef<'a> {
@@ -890,6 +964,7 @@ impl<'a> Node<'a> for CDef<'a> {
         match self {
             Self::Include(i) => vec![i.as_node()],
             Self::Define(d) => vec![d.as_node()],
+            Self::Struct(s) => vec![s.as_node()],
         }
     }
 
@@ -897,7 +972,52 @@ impl<'a> Node<'a> for CDef<'a> {
         match self {
             Self::Include(i) => i.span(),
             Self::Define(d) => d.span(),
+            Self::Struct(s) => s.span(),
         }
+    }
+}
+
+#[derive(Debug)]
+pub struct StructDef<'a> {
+    pub name: Identifier<'a>,
+    pub fields: Vec<FieldDecl<'a>>,
+    pub span: Span<'a>,
+}
+
+impl<'a> Node<'a> for StructDef<'a> {
+    fn as_node(&self) -> &dyn Node<'a> {
+        self
+    }
+
+    fn children(&self) -> Vec<&dyn Node<'a>> {
+        let mut children: Vec<&dyn Node<'a>> = vec![self.name.as_node()];
+        children.extend(self.fields.iter().map(|f| f.as_node()));
+        children
+    }
+
+    fn span(&self) -> Span<'a> {
+        self.span
+    }
+}
+
+#[derive(Debug)]
+pub struct FieldDecl<'a> {
+    pub name: Identifier<'a>,
+    pub type_name: TypeName<'a>,
+    pub span: Span<'a>,
+}
+
+impl<'a> Node<'a> for FieldDecl<'a> {
+    fn as_node(&self) -> &dyn Node<'a> {
+        self
+    }
+
+    fn children(&self) -> Vec<&dyn Node<'a>> {
+        vec![self.name.as_node()]
+    }
+
+    fn span(&self) -> Span<'a> {
+        self.span
     }
 }
 

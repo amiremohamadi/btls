@@ -8,10 +8,10 @@ use pest::{
 
 use super::{
     ArgNExpr, AssignOp, Assignment, BinaryExpr, Block, CDef, Call, CastExpr, Config,
-    ConfigAssignment, Define, Else, ErrorPreamble, ErrorStatement, Expr, For, IdentKind,
-    Identifier, If, Include, IntegerLiteral, Loop, Lvalue, MapAccess, Node, Preamble, Probe,
-    Program, Statement, StringLiteral, UnaryExpr, UnaryOp, UnknownPreamble, UnknownStatement,
-    UnmatchedBrace, Unroll, While,
+    ConfigAssignment, Define, Else, ErrorPreamble, ErrorStatement, Expr, FieldAccess, FieldDecl,
+    For, IdentKind, Identifier, If, Include, IntegerLiteral, Loop, Lvalue, MapAccess, Node,
+    Preamble, Probe, Program, Statement, StringLiteral, StructDef, TypeKind, TypeName, UnaryExpr,
+    UnaryOp, UnknownPreamble, UnknownStatement, UnmatchedBrace, Unroll, While,
 };
 
 #[derive(pest_derive::Parser)]
@@ -203,13 +203,39 @@ fn convert_cast(pair: Pair<Rule>) -> Expr {
     assert!(matches!(pair.as_rule(), Rule::cast));
     let span = pair.as_span();
     let mut pairs = pair.into_inner();
-    let type_name = pairs.next().unwrap().as_str();
+    let type_name = convert_type_name(pairs.next().unwrap());
     let expr = convert_expr(pairs.next().unwrap());
     Expr::Cast(Box::new(CastExpr {
         type_name,
         expr: Box::new(expr),
         span,
     }))
+}
+
+fn convert_type_name(pair: Pair<Rule>) -> TypeName {
+    assert!(matches!(pair.as_rule(), Rule::type_name));
+    let span = pair.as_span();
+    let mut pairs = pair.into_inner().peekable();
+
+    let kind = match pairs.peek().map(|p| p.as_rule()) {
+        Some(Rule::struct_kw) => match pairs.next().unwrap().as_str() {
+            "struct" => TypeKind::Struct,
+            "union" => TypeKind::Union,
+            _ => unreachable!(),
+        },
+        Some(Rule::EOI) | None => TypeKind::Invalid,
+        _ => TypeKind::Builtin,
+    };
+
+    let name = pairs.next().unwrap();
+    let pointers = pairs.filter(|p| p.as_rule() == Rule::ptr).count();
+
+    TypeName {
+        kind,
+        name: name.as_str(),
+        pointers,
+        span,
+    }
 }
 
 fn convert_arg_n(pair: Pair<Rule>) -> ArgNExpr {
@@ -253,7 +279,9 @@ fn convert_expr(pair: Pair<Rule>) -> Expr {
             | Op::prefix(Rule::inc_prefix)
             | Op::prefix(Rule::dec_prefix)
             | Op::prefix(Rule::deref))
-        .op(Op::postfix(Rule::inc_postfix) | Op::postfix(Rule::dec_postfix));
+        .op(Op::postfix(Rule::inc_postfix)
+            | Op::postfix(Rule::dec_postfix)
+            | Op::postfix(Rule::field_access));
 
     parser
         .map_primary(|p| convert_primary_expr(p))
@@ -277,11 +305,21 @@ fn convert_expr(pair: Pair<Rule>) -> Expr {
                 op.as_span().end(),
             )
             .unwrap();
-            Expr::UnaryExpr(Box::new(UnaryExpr {
-                op: convert_unary_op(&op),
-                expr: Box::new(lhs),
-                span,
-            }))
+            match op.as_rule() {
+                Rule::field_access => {
+                    let field = op.into_inner().next().map(convert_ident);
+                    Expr::Field(Box::new(FieldAccess {
+                        base: Box::new(lhs),
+                        field,
+                        span,
+                    }))
+                }
+                _ => Expr::UnaryExpr(Box::new(UnaryExpr {
+                    op: convert_unary_op(&op),
+                    expr: Box::new(lhs),
+                    span,
+                })),
+            }
         })
         .map_infix(|lhs, _op, rhs| {
             let span =
@@ -394,14 +432,19 @@ fn convert_unroll(pair: Pair<Rule>) -> Loop {
 
 fn convert_statement(pair: Pair<Rule>) -> Statement {
     assert!(matches!(pair.as_rule(), Rule::statement));
-    let pair = pair.into_inner().exactly_one().unwrap();
-    match pair.as_rule() {
-        Rule::assignment => Statement::Assignment(Box::new(convert_assignment(pair))),
-        Rule::r#if => Statement::IfCond(Box::new(convert_if(pair))),
-        Rule::r#while => Statement::Loop(Box::new(convert_while(pair))),
-        Rule::r#for => Statement::Loop(Box::new(convert_for(pair))),
-        Rule::unroll => Statement::Loop(Box::new(convert_unroll(pair))),
-        Rule::expr => Statement::Expr(Box::new(convert_expr(pair))),
+    let statement_span = pair.as_span();
+    let inner = pair.into_inner().exactly_one().unwrap();
+    // TODO: currently, semicolon matching happens during semantic analysis
+    // to fix code completion issues when semicolons are missing.
+    // check if this approach is common in other parsers as well.
+    let has_semi = statement_span.end() > inner.as_span().end();
+    match inner.as_rule() {
+        Rule::assignment => Statement::Assignment(Box::new(convert_assignment(inner)), has_semi),
+        Rule::r#if => Statement::IfCond(Box::new(convert_if(inner))),
+        Rule::r#while => Statement::Loop(Box::new(convert_while(inner))),
+        Rule::r#for => Statement::Loop(Box::new(convert_for(inner))),
+        Rule::unroll => Statement::Loop(Box::new(convert_unroll(inner))),
+        Rule::expr => Statement::Expr(Box::new(convert_expr(inner)), has_semi),
         _ => unreachable!(),
     }
 }
@@ -498,7 +541,46 @@ fn convert_cdef(pair: Pair<Rule>) -> CDef {
     match pair.as_rule() {
         Rule::include => CDef::Include(Box::new(convert_include(pair))),
         Rule::define => CDef::Define(Box::new(convert_define(pair))),
+        Rule::struct_def => CDef::Struct(Box::new(convert_struct_def(pair))),
         _ => unreachable!(),
+    }
+}
+
+fn convert_struct_def(pair: Pair<Rule>) -> StructDef {
+    assert!(matches!(pair.as_rule(), Rule::struct_def));
+    let span = pair.as_span();
+    let mut pairs = pair.into_inner();
+
+    // skip the leading struct keyword
+    let name = pairs
+        .find(|p| matches!(p.as_rule(), Rule::identifier))
+        .map(convert_ident)
+        .unwrap();
+    let fields = pairs
+        .filter(|p| matches!(p.as_rule(), Rule::field_decl))
+        .map(convert_field_decl)
+        .collect();
+
+    StructDef { name, fields, span }
+}
+
+fn convert_field_decl(pair: Pair<Rule>) -> FieldDecl {
+    assert!(matches!(pair.as_rule(), Rule::field_decl));
+    let span = pair.as_span();
+    let mut pairs = pair.into_inner();
+    let type_pair = pairs.next().unwrap();
+
+    assert!(matches!(type_pair.as_rule(), Rule::type_name));
+    let type_name = convert_type_name(type_pair);
+    let name = pairs
+        .find(|p| matches!(p.as_rule(), Rule::identifier))
+        .map(convert_ident)
+        .unwrap();
+
+    FieldDecl {
+        name,
+        type_name,
+        span,
     }
 }
 

@@ -1,7 +1,9 @@
 use super::analyzer::semantic_analyzer;
+use super::analyzer::semantic_analyzer::{StructInfo, TypeInfo};
 use super::builtins::{BUILTINS, DATA_TYPES, SYNTAX_KEYWORDS};
-use super::parser::{Config, Node, Program, Walk};
+use super::parser::{Config, Expr, FieldAccess, Node, Program, Walk};
 use super::server::Context;
+use std::collections::HashMap;
 use std::path::Path;
 use tower_lsp::jsonrpc::{Error, ErrorCode, Result};
 use tower_lsp::lsp_types::{
@@ -41,6 +43,11 @@ pub async fn completion(
 
     if let Some(config) = cfg_block_at(analyzed.ast(), offset) {
         let items = cfg_completion(config, offset);
+        return Ok(Some(CompletionResponse::Array(items)));
+    }
+
+    if let Some(field) = field_access_at(analyzed.ast(), offset) {
+        let items = field_completion(field, &analyzed.struct_defs, &analyzed.var_types);
         return Ok(Some(CompletionResponse::Array(items)));
     }
 
@@ -98,6 +105,49 @@ fn cfg_block_at<'a>(program: &'a Program<'a>, offset: usize) -> Option<&'a Confi
         }
     }
     None
+}
+
+fn field_access_at<'a>(program: &'a Program<'a>, offset: usize) -> Option<&'a FieldAccess<'a>> {
+    let mut innermost: Option<&'a FieldAccess<'a>> = None;
+    for node in Walk::new(program.as_node()) {
+        if let Some(Expr::Field(field)) = node.as_expr() {
+            let base_end = field.base.span().end();
+            if base_end < offset
+                && offset <= field.span.end()
+                && innermost.is_none_or(|current| base_end > current.base.span().end())
+            {
+                innermost = Some(field);
+            }
+        }
+    }
+    innermost
+}
+
+fn field_completion(
+    field: &FieldAccess,
+    structs: &HashMap<String, StructInfo>,
+    var_types: &HashMap<String, TypeInfo>,
+) -> Vec<CompletionItem> {
+    let Some(base_type) = semantic_analyzer::resolve_expr_type(&field.base, structs, var_types)
+    else {
+        // unknown base type
+        return Vec::new();
+    };
+    let TypeInfo::StructLike { name, .. } = &base_type else {
+        return Vec::new();
+    };
+    let Some(info) = structs.get(name) else {
+        return Vec::new();
+    };
+    info.fields
+        .iter()
+        .map(|f| CompletionItem {
+            label: f.name.clone(),
+            kind: Some(CompletionItemKind::FIELD),
+            detail: Some(f.type_name.to_string()),
+            ..Default::default()
+        })
+        .collect()
 }
 
 fn cfg_context(config: &Config, offset: usize) -> ConfigContext {
@@ -181,5 +231,99 @@ mod tests {
         let labels: Vec<_> = items.iter().map(|i| i.label.as_str()).collect();
 
         assert_eq!(labels, vec!["bpftrace", "perf", "raw"]);
+    }
+
+    #[test]
+    fn test_struct() {
+        let src = r#"
+        struct Foo {
+            int32 x;
+            uint64 y;
+            invalid_type invalid;
+        }
+
+        BEGIN {
+            $f = (struct Foo *)arg0; $f->
+        }
+        "#;
+        let program = ast::parse(src).unwrap();
+
+        let cursor = src.find("$f->").unwrap() + "$f->".len();
+        let field = field_access_at(&program, cursor).expect("field access at cursor");
+        let structs = semantic_analyzer::collect_structs(&program);
+        let var_types = semantic_analyzer::collect_var_types(&program);
+        let labels: Vec<_> = field_completion(field, &structs, &var_types)
+            .into_iter()
+            .map(|i| i.label)
+            .collect();
+
+        assert_eq!(labels.len(), 2);
+        assert_eq!(labels[0], "x");
+        assert_eq!(labels[1], "y");
+    }
+
+    #[test]
+    fn test_resolve_expr_type() {
+        let src = r#"
+        struct Bar {
+            uint64 sector;
+        }
+
+        struct Foo {
+            struct Bar *bar;
+        }
+
+        BEGIN {
+            $f = (struct Foo *)arg0;
+            $f->bar->
+        }
+        "#;
+        let program = ast::parse(src).unwrap();
+        let structs = semantic_analyzer::collect_structs(&program);
+        let var_types = semantic_analyzer::collect_var_types(&program);
+        let cursor = src.find("$f->bar->").unwrap() + "$f->bar->".len();
+        let field = field_access_at(&program, cursor).expect("field access at cursor");
+
+        let base_type = semantic_analyzer::resolve_expr_type(&field.base, &structs, &var_types)
+            .expect("base type");
+
+        assert_eq!(
+            base_type,
+            TypeInfo::StructLike {
+                kind: crate::parser::TypeKind::Struct,
+                name: "Bar".to_string(),
+                pointers: 1,
+            }
+        );
+    }
+
+    #[test]
+    fn test_assignment_type_propagation() {
+        let src = r#"
+        struct Inner {
+            int64 x;
+        }
+
+        struct Outer {
+            struct Inner *field1;
+        }
+
+        BEGIN {
+            $test = (struct Outer *)arg0;
+            $x = $test->field1;
+            $x->
+        }
+        "#;
+        let program = ast::parse(src).unwrap();
+        let cursor = src.find("$x->").unwrap() + "$x->".len();
+        let field = field_access_at(&program, cursor).expect("field access at cursor");
+        let structs = semantic_analyzer::collect_structs(&program);
+        let var_types = semantic_analyzer::collect_var_types(&program);
+        let labels: Vec<_> = field_completion(field, &structs, &var_types)
+            .into_iter()
+            .map(|i| i.label)
+            .collect();
+
+        assert_eq!(labels, vec!["x"]);
     }
 }
