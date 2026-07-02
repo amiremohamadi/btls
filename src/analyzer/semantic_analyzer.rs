@@ -18,14 +18,6 @@ use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity};
 
 use super::OwnedAst;
 
-fn var_prefix(kind: IdentKind) -> &'static str {
-    match kind {
-        IdentKind::Scratch => "$",
-        IdentKind::Map => "@",
-        IdentKind::Bare => "",
-    }
-}
-
 impl fmt::Display for MacroParamKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -436,7 +428,7 @@ fn collect_vars_in_block(block: &Block, offset: usize, vars: &mut Vec<RawVar>) {
                     _ => None,
                 } {
                     vars.push((
-                        format!("{}{}", var_prefix(ident.kind), ident.name),
+                        ident.prefixed_name(),
                         VarLoc {
                             offset: assign.span.start(),
                             text: assign.span.as_str().to_string(),
@@ -449,7 +441,7 @@ fn collect_vars_in_block(block: &Block, offset: usize, vars: &mut Vec<RawVar>) {
                     if let Expr::Identifier(ident) = for_loop.lhs.as_ref() {
                         if ident.kind != IdentKind::Map {
                             vars.push((
-                                format!("{}{}", var_prefix(ident.kind), ident.name),
+                                ident.prefixed_name(),
                                 VarLoc {
                                     offset: loop_stmt.span().start(),
                                     text: loop_stmt.span().as_str().to_string(),
@@ -492,7 +484,7 @@ fn collect_vars_in_block(block: &Block, offset: usize, vars: &mut Vec<RawVar>) {
                             _ => None,
                         } {
                             vars.push((
-                                format!("{}{}", var_prefix(ident.kind), ident.name),
+                                ident.prefixed_name(),
                                 VarLoc {
                                     offset: unary.span.start(),
                                     text: unary.span.as_str().to_string(),

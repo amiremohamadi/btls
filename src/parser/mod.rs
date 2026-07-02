@@ -212,6 +212,16 @@ pub enum IdentKind {
     Map,
 }
 
+impl IdentKind {
+    pub fn prefix(self) -> &'static str {
+        match self {
+            IdentKind::Scratch => "$",
+            IdentKind::Map => "@",
+            IdentKind::Bare => "",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MacroParamKind {
     Expr,
@@ -224,6 +234,12 @@ pub struct Identifier<'a> {
     pub name: &'a str,
     pub span: Span<'a>,
     pub kind: IdentKind,
+}
+
+impl<'a> Identifier<'a> {
+    pub fn prefixed_name(&self) -> String {
+        format!("{}{}", self.kind.prefix(), self.name)
+    }
 }
 
 impl<'a> Node<'a> for Identifier<'a> {
