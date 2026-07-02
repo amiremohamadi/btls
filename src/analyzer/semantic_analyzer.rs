@@ -4,8 +4,9 @@ use std::sync::Arc;
 use crate::builtins::BUILTINS;
 use crate::common::utils::OwnedLineIndex;
 use crate::parser::{
-    Block, CDef, Else, Expr, IdentKind, Loop, Lvalue, Node, Preamble, Probe, Program, Statement,
-    TypeKind, TypeName, UnaryOp, UndefinedFunc, UndefinedIdent,
+    Block, CDef, Else, Expr, IdentKind, Loop, Lvalue, MacroDefinition, MacroParam, MacroParamKind,
+    Node, Preamble, Probe, Program, Statement, TypeKind, TypeName, UnaryOp, UndefinedFunc,
+    UndefinedIdent,
 };
 use crate::server::Context;
 use crate::storage::Document;
@@ -22,6 +23,16 @@ fn var_prefix(kind: IdentKind) -> &'static str {
         IdentKind::Scratch => "$",
         IdentKind::Map => "@",
         IdentKind::Bare => "",
+    }
+}
+
+impl fmt::Display for MacroParamKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            MacroParamKind::Expr => write!(f, "Expression"),
+            MacroParamKind::Scratch => write!(f, "Scratch Variable"),
+            MacroParamKind::Map => write!(f, "Map"),
+        }
     }
 }
 
@@ -99,6 +110,16 @@ fn collect_defines(program: &Program) -> Vec<RawVar> {
         }
     }
     defines
+}
+
+fn collect_macros<'a>(program: &'a Program<'a>) -> HashMap<String, &'a MacroDefinition<'a>> {
+    let mut macros = HashMap::new();
+    for preamble in &program.preambles {
+        if let Preamble::Macro(mac) = preamble {
+            macros.insert(mac.name.name.to_string(), mac.as_ref());
+        }
+    }
+    macros
 }
 
 #[derive(Debug, Clone)]
@@ -292,7 +313,7 @@ fn collect_global_maps(program: &Program) -> Vec<RawVar> {
     for preamble in &program.preambles {
         match preamble {
             Preamble::Probe(probe) => collect_maps_in_block(&probe.block, &mut maps),
-            Preamble::CDef(_) | Preamble::Config(_) | Preamble::Error(_) => {}
+            Preamble::CDef(_) | Preamble::Macro(_) | Preamble::Config(_) | Preamble::Error(_) => {}
         }
     }
     maps
@@ -399,7 +420,7 @@ fn collect_vars_in_preamble(preamble: &Preamble, offset: usize, vars: &mut Vec<R
         Preamble::Probe(probe) => {
             collect_vars_in_block(&probe.block, offset, vars);
         }
-        Preamble::CDef(_) | Preamble::Config(_) | Preamble::Error(_) => {}
+        Preamble::CDef(_) | Preamble::Macro(_) | Preamble::Config(_) | Preamble::Error(_) => {}
     }
 }
 
@@ -504,17 +525,37 @@ fn collect_vars_in_else(else_branch: &Else, offset: usize, vars: &mut Vec<RawVar
     }
 }
 
+#[derive(Clone)]
+struct ScopeTracker {
+    vars: Vec<(String, IdentKind)>,
+}
+
+impl ScopeTracker {
+    fn new() -> Self {
+        Self { vars: Vec::new() }
+    }
+
+    fn define(&mut self, name: &str, kind: IdentKind) {
+        self.vars.push((name.to_string(), kind));
+    }
+
+    fn is_defined(&self, name: &str, kind: IdentKind) -> bool {
+        self.vars.iter().any(|(n, k)| n == name && *k == kind)
+    }
+}
+
 struct ErrorChecker<'a> {
     global_maps: &'a [VarInfo],
     defines: &'a [VarInfo],
+    macros: &'a HashMap<String, &'a MacroDefinition<'a>>,
     struct_defs: &'a HashMap<String, StructInfo>,
     var_types: &'a HashMap<String, TypeInfo>,
     line_index: &'a OwnedLineIndex,
     out: Vec<Diagnostic>,
 }
 
-impl ErrorChecker<'_> {
-    fn check_program(&mut self, program: &Program) {
+impl<'a> ErrorChecker<'a> {
+    fn check_program(&mut self, program: &'a Program<'a>) {
         for preamble in &program.preambles {
             match preamble {
                 Preamble::Probe(probe) => self.check_probe(probe),
@@ -522,29 +563,31 @@ impl ErrorChecker<'_> {
                     if let CDef::Struct(def) = cdef.as_ref() {
                         for field in &def.fields {
                             if !field.type_name.validate(self.struct_defs) {
-                                self.out.push(Diagnostic {
-                                    range: self.line_index.range(field.span),
-                                    severity: Some(DiagnosticSeverity::ERROR),
-                                    message: format!(
+                                self.push_span(
+                                    field.span,
+                                    DiagnosticSeverity::ERROR,
+                                    format!(
                                         "Unsupported field type \"{}\"",
                                         field.type_name.text()
                                     ),
-                                    ..Default::default()
-                                });
+                                );
                             }
                         }
                     }
                 }
+                Preamble::Macro(mac) => self.check_macro(mac),
                 Preamble::Config(_) => {}
-                Preamble::Error(e) => self.push_span_error(e.span(), e.diagnosis()),
+                Preamble::Error(e) => {
+                    self.push_span(e.span(), DiagnosticSeverity::ERROR, e.diagnosis())
+                }
             }
         }
     }
 
-    fn push_span_error(&mut self, span: Span, message: String) {
+    fn push_span(&mut self, span: Span, severity: DiagnosticSeverity, message: String) {
         self.out.push(Diagnostic {
             range: self.line_index.range(span),
-            severity: Some(DiagnosticSeverity::ERROR),
+            severity: Some(severity),
             message,
             ..Default::default()
         });
@@ -552,25 +595,51 @@ impl ErrorChecker<'_> {
 
     fn emit_diag(&mut self, stmt: &Statement) {
         if let Statement::Error(e) = stmt {
-            self.push_span_error(e.span(), e.diagnosis());
+            self.push_span(e.span(), DiagnosticSeverity::ERROR, e.diagnosis());
         }
     }
 
     fn check_semicolon(&mut self, stmt: &Statement) {
         if !stmt.has_semicolon() {
-            self.push_span_error(stmt.span(), "Expected ';' after statement".to_string());
+            self.push_span(
+                stmt.span(),
+                DiagnosticSeverity::ERROR,
+                "Expected ';' after statement".to_string(),
+            );
         }
     }
 
     fn check_probe(&mut self, probe: &Probe) {
-        let mut scope = Vec::new();
+        let mut scope = ScopeTracker::new();
         if let Some(cond) = &probe.condition {
             self.check_expr(cond, &scope);
         }
         self.check_block(&probe.block, &mut scope);
     }
 
-    fn check_block(&mut self, block: &Block, scope: &mut Vec<String>) {
+    fn check_macro(&mut self, r#macro: &'a MacroDefinition<'a>) {
+        for param in &r#macro.params {
+            if let MacroParam::Map {
+                keyed: true, span, ..
+            } = param
+            {
+                self.push_span(
+                    *span,
+                    DiagnosticSeverity::ERROR,
+                    "Map access is not allowed".to_string(),
+                );
+            }
+        }
+
+        let mut scope = ScopeTracker::new();
+        for param in &r#macro.params {
+            let name = param.name();
+            scope.define(name.name, name.kind);
+        }
+        self.check_block(&r#macro.body, &mut scope);
+    }
+
+    fn check_block(&mut self, block: &Block, scope: &mut ScopeTracker) {
         for stmt in &block.statements {
             self.emit_diag(stmt);
             self.check_semicolon(stmt);
@@ -579,7 +648,7 @@ impl ErrorChecker<'_> {
                     self.check_expr(&assign.rvalue, scope);
                     match &assign.lvalue {
                         Lvalue::Identifier(ident) if ident.kind != IdentKind::Map => {
-                            scope.push(format!("{}{}", var_prefix(ident.kind), ident.name));
+                            scope.define(ident.name, ident.kind);
                         }
                         Lvalue::MapAccess(access) => {
                             for key in &access.keys {
@@ -594,7 +663,7 @@ impl ErrorChecker<'_> {
                         self.check_expr(&for_loop.rhs, scope);
                         if let Expr::Identifier(ident) = for_loop.lhs.as_ref() {
                             if ident.kind != IdentKind::Map {
-                                scope.push(format!("{}{}", var_prefix(ident.kind), ident.name));
+                                scope.define(ident.name, ident.kind);
                             }
                         }
                         let mut inner = scope.clone();
@@ -626,38 +695,41 @@ impl ErrorChecker<'_> {
         }
     }
 
-    fn check_expr(&mut self, expr: &Expr, scope: &[String]) {
+    fn check_expr(&mut self, expr: &Expr, scope: &ScopeTracker) {
         match expr {
             Expr::Identifier(ident) => match ident.kind {
                 IdentKind::Bare => {
-                    if !BUILTINS.keywords.iter().any(|k| k.name == ident.name)
+                    if !scope.is_defined(ident.name, IdentKind::Bare)
+                        && !BUILTINS.keywords.iter().any(|k| k.name == ident.name)
                         && !self.defines.iter().any(|d| d.name == ident.name)
                     {
                         self.emit_diag(&UndefinedIdent::new(ident.name, ident.span));
                     }
                 }
                 IdentKind::Scratch => {
-                    if !scope.contains(&format!("${}", ident.name)) {
+                    if !scope.is_defined(ident.name, IdentKind::Scratch) {
                         self.emit_diag(&UndefinedIdent::new(ident.name, ident.span));
                     }
                 }
                 IdentKind::Map => {
-                    if !self
-                        .global_maps
-                        .iter()
-                        .any(|m| m.name == format!("@{}", ident.name))
+                    if !scope.is_defined(ident.name, IdentKind::Map)
+                        && !self
+                            .global_maps
+                            .iter()
+                            .any(|m| m.name == format!("@{}", ident.name))
                     {
-                        self.out.push(Diagnostic {
-                            range: self.line_index.range(ident.span),
-                            severity: Some(DiagnosticSeverity::WARNING),
-                            message: format!("Undefined map \"@{}\"", ident.name),
-                            ..Default::default()
-                        });
+                        self.push_span(
+                            ident.span,
+                            DiagnosticSeverity::WARNING,
+                            format!("Undefined map \"@{}\"", ident.name),
+                        );
                     }
                 }
             },
             Expr::Call(call) => {
-                if !BUILTINS.functions.iter().any(|f| f.name == call.func.name) {
+                if let Some(mac) = self.macros.get(call.func.name) {
+                    self.check_macro_call(mac, call.args.as_slice(), call.span());
+                } else if !BUILTINS.functions.iter().any(|f| f.name == call.func.name) {
                     self.emit_diag(&UndefinedFunc::new(call.func.name, call.span()));
                 }
                 for arg in &call.args {
@@ -673,17 +745,17 @@ impl ErrorChecker<'_> {
             }
             Expr::MapAccess(access) => {
                 if !access.map.name.is_empty()
+                    && !scope.is_defined(access.map.name, IdentKind::Map)
                     && !self
                         .global_maps
                         .iter()
                         .any(|m| m.name == format!("@{}", access.map.name))
                 {
-                    self.out.push(Diagnostic {
-                        range: self.line_index.range(access.map.span),
-                        severity: Some(DiagnosticSeverity::WARNING),
-                        message: format!("Undefined map \"@{}\"", access.map.name),
-                        ..Default::default()
-                    });
+                    self.push_span(
+                        access.map.span,
+                        DiagnosticSeverity::WARNING,
+                        format!("Undefined map \"@{}\"", access.map.name),
+                    );
                 }
                 for key in &access.keys {
                     self.check_expr(key, scope);
@@ -704,51 +776,88 @@ impl ErrorChecker<'_> {
                     return;
                 };
                 let TypeInfo::StructLike { name, .. } = &base_type else {
-                    self.out.push(Diagnostic {
-                        range: self.line_index.range(member.span),
-                        severity: Some(DiagnosticSeverity::ERROR),
-                        message: format!(
-                            "Field access is not supported on \"{}\"",
-                            base_type.name()
-                        ),
-                        ..Default::default()
-                    });
+                    self.push_span(
+                        member.span,
+                        DiagnosticSeverity::ERROR,
+                        format!("Field access is not supported on \"{}\"", base_type.name()),
+                    );
                     return;
                 };
                 let Some(info) = self.struct_defs.get(name) else {
                     return;
                 };
                 if !info.fields.iter().any(|decl| decl.name == member.name) {
-                    self.out.push(Diagnostic {
-                        range: self.line_index.range(member.span),
-                        severity: Some(DiagnosticSeverity::ERROR),
-                        message: format!(
-                            "\"{}\" has no field \"{}\"",
-                            base_type.name(),
-                            member.name
-                        ),
-                        ..Default::default()
-                    });
+                    self.push_span(
+                        member.span,
+                        DiagnosticSeverity::ERROR,
+                        format!("\"{}\" has no field \"{}\"", base_type.name(), member.name),
+                    );
                 }
             }
         }
     }
 
-    fn check_else(&mut self, else_branch: &Else, scope: &[String]) {
+    fn check_macro_call(&mut self, r#macro: &MacroDefinition, args: &[Expr], span: Span) {
+        if r#macro.params.len() != args.len() {
+            self.push_span(
+                span,
+                DiagnosticSeverity::ERROR,
+                format!(
+                    "Macro \"{}\" expects {} args but got {}",
+                    r#macro.name.name,
+                    r#macro.params.len(),
+                    args.len()
+                ),
+            );
+            return;
+        }
+
+        for (param, arg) in r#macro.params.iter().zip(args.iter()) {
+            let arg_matches = match (param.kind(), arg) {
+                (MacroParamKind::Expr, _) => true,
+                (MacroParamKind::Scratch, Expr::Identifier(ident)) => {
+                    ident.kind == IdentKind::Scratch
+                }
+                (MacroParamKind::Map, Expr::Identifier(ident)) => ident.kind == IdentKind::Map,
+                (MacroParamKind::Map, Expr::MapAccess(access)) => access.map.kind == IdentKind::Map,
+                _ => false,
+            };
+
+            if !arg_matches {
+                self.push_span(
+                    arg.span(),
+                    DiagnosticSeverity::ERROR,
+                    format!(
+                        "Macro \"{}\" parameter \"{}\" expects {}",
+                        r#macro.name.name,
+                        param.name().name,
+                        param.kind()
+                    ),
+                );
+            }
+        }
+    }
+
+    fn check_else(&mut self, else_branch: &Else, scope: &ScopeTracker) {
         match else_branch {
             Else::IfCond(if_cond) => {
                 self.check_expr(&if_cond.condition, scope);
-                let mut inner = scope.to_vec();
+                let mut inner = scope.clone();
                 self.check_block(&if_cond.block, &mut inner);
                 if let Some(next_else) = &if_cond.else_branch {
                     self.check_else(next_else, scope);
                 }
             }
             Else::Block(block) => {
-                let mut inner = scope.to_vec();
+                let mut inner = scope.clone();
                 self.check_block(block, &mut inner);
             }
         }
+    }
+
+    fn into_diagnostics(mut self, program: &'a Program<'a>) -> Vec<Diagnostic> {
+        self.check_program(program);
+        self.out
     }
 }
 
@@ -756,7 +865,6 @@ pub struct SemanticAnalyzer;
 
 pub struct AnalyzedFile {
     pub document: Arc<Document>,
-    pub variables: Vec<String>,
     pub struct_defs: HashMap<String, StructInfo>,
     pub var_types: HashMap<String, TypeInfo>,
     diagnostics: Vec<Diagnostic>,
@@ -778,114 +886,6 @@ impl SemanticAnalyzer {
         Self
     }
 
-    fn walk_variables(program: &Program) -> Vec<String> {
-        let mut variables = vec![];
-        for preamble in &program.preambles {
-            if let Preamble::Probe(probe) = preamble {
-                Self::walk_vars_in_block(&probe.block, &mut variables);
-            }
-        }
-        variables
-    }
-
-    fn walk_vars_in_block(block: &Block, variables: &mut Vec<String>) {
-        for stmt in &block.statements {
-            match stmt {
-                Statement::Assignment(a, _) => {
-                    let prefix = match &a.lvalue {
-                        Lvalue::Identifier(ident) => {
-                            Some(format!("{}{}", var_prefix(ident.kind), ident.name))
-                        }
-                        Lvalue::MapAccess(access) => Some(format!(
-                            "{}{}",
-                            var_prefix(access.map.kind),
-                            access.map.name
-                        )),
-                    };
-                    if let Some(v) = prefix {
-                        variables.push(v);
-                    }
-                }
-                Statement::Loop(loop_stmt) => {
-                    if let Loop::For(for_loop) = loop_stmt.as_ref() {
-                        if let Expr::Identifier(ident) = for_loop.lhs.as_ref() {
-                            variables.push(format!("{}{}", var_prefix(ident.kind), ident.name));
-                        }
-                        Self::walk_vars_in_block(&for_loop.block, variables);
-                    }
-                    if let Loop::While(w) = loop_stmt.as_ref() {
-                        Self::walk_vars_in_block(&w.block, variables);
-                    }
-                    if let Loop::Unroll(u) = loop_stmt.as_ref() {
-                        Self::walk_vars_in_block(&u.block, variables);
-                    }
-                }
-                Statement::IfCond(if_cond) => {
-                    Self::walk_vars_in_block(&if_cond.block, variables);
-                    if let Some(else_branch) = &if_cond.else_branch {
-                        Self::walk_vars_in_else(else_branch, variables);
-                    }
-                }
-                Statement::Expr(expr, _) => {
-                    if let Expr::UnaryExpr(unary) = expr.as_ref() {
-                        if matches!(unary.op, UnaryOp::Inc | UnaryOp::Dec) {
-                            match unary.expr.as_ref() {
-                                Expr::Identifier(ident) => {
-                                    variables.push(format!(
-                                        "{}{}",
-                                        var_prefix(ident.kind),
-                                        ident.name
-                                    ));
-                                }
-                                Expr::MapAccess(access) => {
-                                    variables.push(format!(
-                                        "{}{}",
-                                        var_prefix(access.map.kind),
-                                        access.map.name
-                                    ));
-                                }
-                                _ => {}
-                            }
-                        }
-                    }
-                }
-                Statement::Error(_) => {}
-            }
-        }
-    }
-
-    fn walk_vars_in_else(else_branch: &Else, variables: &mut Vec<String>) {
-        match else_branch {
-            Else::IfCond(if_cond) => {
-                Self::walk_vars_in_block(&if_cond.block, variables);
-                if let Some(next_else) = &if_cond.else_branch {
-                    Self::walk_vars_in_else(next_else, variables);
-                }
-            }
-            Else::Block(block) => Self::walk_vars_in_block(block, variables),
-        }
-    }
-
-    fn collect_errors(
-        program: &Program,
-        global_maps: &[VarInfo],
-        defines: &[VarInfo],
-        struct_defs: &HashMap<String, StructInfo>,
-        var_types: &HashMap<String, TypeInfo>,
-        line_index: &OwnedLineIndex,
-    ) -> Vec<Diagnostic> {
-        let mut checker = ErrorChecker {
-            global_maps,
-            defines,
-            struct_defs,
-            var_types,
-            line_index,
-            out: Vec::new(),
-        };
-        checker.check_program(program);
-        checker.out
-    }
-
     pub async fn analyze(&self, context: &Context, path: &Path) -> Result<AnalyzedFile> {
         let document = context.storage.lock().await.read(path);
         let source = document.data.clone();
@@ -893,27 +893,38 @@ impl SemanticAnalyzer {
         let ast_cell = OwnedAst::new(source)?;
 
         let program = ast_cell.program();
-        let global_maps = merge_vars(collect_global_maps(program));
-        let defines = merge_vars(collect_defines(program));
         let struct_defs = collect_structs(program);
         let var_types = collect_var_types(program);
-        let diagnostics = Self::collect_errors(
-            program,
-            &global_maps,
-            &defines,
-            &struct_defs,
-            &var_types,
-            &line_index,
-        );
-        let variables = Self::walk_variables(program);
+        let diagnostics = compute_diagnostics(program, &line_index, &struct_defs, &var_types);
 
         Ok(AnalyzedFile {
             document,
             ast_cell,
-            variables,
             struct_defs,
             var_types,
             diagnostics,
         })
     }
+}
+
+fn compute_diagnostics(
+    program: &Program,
+    line_index: &OwnedLineIndex,
+    struct_defs: &HashMap<String, StructInfo>,
+    var_types: &HashMap<String, TypeInfo>,
+) -> Vec<Diagnostic> {
+    let global_maps = merge_vars(collect_global_maps(program));
+    let defines = merge_vars(collect_defines(program));
+    let macros = collect_macros(program);
+
+    ErrorChecker {
+        global_maps: &global_maps,
+        defines: &defines,
+        macros: &macros,
+        struct_defs,
+        var_types,
+        line_index,
+        out: Vec::new(),
+    }
+    .into_diagnostics(program)
 }

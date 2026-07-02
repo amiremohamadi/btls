@@ -9,9 +9,10 @@ use pest::{
 use super::{
     ArgNExpr, AssignOp, Assignment, BinaryExpr, Block, CDef, Call, CastExpr, Config,
     ConfigAssignment, Define, Else, ErrorPreamble, ErrorStatement, Expr, FieldAccess, FieldDecl,
-    For, IdentKind, Identifier, If, Include, IntegerLiteral, Loop, Lvalue, MapAccess, Node,
-    Preamble, Probe, Program, Statement, StringLiteral, StructDef, TypeKind, TypeName, UnaryExpr,
-    UnaryOp, UnknownPreamble, UnknownStatement, UnmatchedBrace, Unroll, While,
+    For, IdentKind, Identifier, If, Include, IntegerLiteral, Loop, Lvalue, MacroDefinition,
+    MacroParam, MacroParamKind, MapAccess, Node, Preamble, Probe, Program, Statement,
+    StringLiteral, StructDef, TypeKind, TypeName, UnaryExpr, UnaryOp, UnknownPreamble,
+    UnknownStatement, UnmatchedBrace, Unroll, While,
 };
 
 #[derive(pest_derive::Parser)]
@@ -44,6 +45,91 @@ fn convert_ident(pair: Pair<Rule>) -> Identifier {
     }
 }
 
+fn convert_macro_param(pair: Pair<Rule>) -> MacroParam {
+    assert!(matches!(pair.as_rule(), Rule::macro_param));
+    let span = pair.as_span();
+    let inner = pair.into_inner().exactly_one().unwrap();
+
+    match inner.as_rule() {
+        Rule::identifier => MacroParam::Expr {
+            name: convert_ident(inner),
+            span,
+        },
+        Rule::scratch_var => {
+            let name = convert_ident(inner.into_inner().exactly_one().unwrap());
+            MacroParam::Scratch {
+                name: Identifier {
+                    kind: IdentKind::Scratch,
+                    ..name
+                },
+                span,
+            }
+        }
+        Rule::map_var => {
+            let mut parts = inner.into_inner();
+            let first = parts.next();
+            let (name, keyed) = match first {
+                Some(first) if matches!(first.as_rule(), Rule::identifier) => {
+                    let has_keys = parts.next().is_some();
+                    (convert_ident(first), has_keys)
+                }
+                Some(first) if matches!(first.as_rule(), Rule::map_keys) => (
+                    Identifier {
+                        name: "",
+                        span,
+                        kind: IdentKind::Map,
+                    },
+                    true,
+                ),
+                None => (
+                    Identifier {
+                        name: "",
+                        span,
+                        kind: IdentKind::Map,
+                    },
+                    false,
+                ),
+                _ => unreachable!(),
+            };
+            MacroParam::Map {
+                name: Identifier {
+                    kind: IdentKind::Map,
+                    ..name
+                },
+                keyed,
+                span,
+            }
+        }
+        _ => unreachable!(),
+    }
+}
+
+fn convert_macro_def(pair: Pair<Rule>) -> MacroDefinition {
+    assert!(matches!(pair.as_rule(), Rule::macro_def));
+    let span = pair.as_span();
+    let mut pairs = pair.into_inner();
+
+    let name = convert_ident(pairs.next().unwrap());
+    let next = pairs.next().unwrap();
+    let (params, body) = match next.as_rule() {
+        Rule::macro_params => (
+            next.into_inner()
+                .filter(|p| matches!(p.as_rule(), Rule::macro_param))
+                .map(convert_macro_param)
+                .collect(),
+            pairs.next().unwrap(),
+        ),
+        _ => (Vec::new(), next),
+    };
+
+    MacroDefinition {
+        name,
+        params,
+        body: convert_block(body),
+        span,
+    }
+}
+
 fn convert_var_to_expr(pair: Pair<Rule>) -> Expr {
     assert!(matches!(pair.as_rule(), Rule::variable));
     let span = pair.as_span();
@@ -59,6 +145,13 @@ fn convert_var_to_expr(pair: Pair<Rule>) -> Expr {
         Rule::map_var => convert_map_var_to_expr(inner, span),
         _ => unreachable!(),
     }
+}
+
+fn convert_map_var<'a>(pair: Pair<'a, Rule>) -> Identifier<'a> {
+    assert!(matches!(pair.as_rule(), Rule::map_var));
+    let mut ident = convert_ident(pair.into_inner().exactly_one().unwrap());
+    ident.kind = IdentKind::Map;
+    ident
 }
 
 fn convert_map_var_to_expr<'a>(pair: Pair<'a, Rule>, span: Span<'a>) -> Expr<'a> {
@@ -610,6 +703,7 @@ fn convert_preamble(pair: Pair<Rule>) -> Preamble {
         Rule::cfg_block => Preamble::Config(Box::new(convert_config(pair))),
         Rule::probe => Preamble::Probe(convert_probe(pair)),
         Rule::cdef => Preamble::CDef(Box::new(convert_cdef(pair))),
+        Rule::macro_def => Preamble::Macro(Box::new(convert_macro_def(pair))),
         _ => unreachable!(),
     }
 }

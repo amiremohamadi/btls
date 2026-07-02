@@ -73,6 +73,12 @@ fn test_sanity() {
     parse_no_errors("BEGIN { @map[1]++; }");
     parse_no_errors("BEGIN { ++@map[1]; }");
     parse_no_errors("BEGIN { @map[@n] = $x; }");
+    parse_no_errors("macro one() { 1 }");
+    parse_no_errors("macro add_one(x) { x + 1 }");
+    parse_no_errors("macro add_one_to_each($a, @b) { $a += 1; @b += 1; }");
+    parse_no_errors("macro wrong_parameter_type(@m[2]) { $x++ }"); // should be valid in ast level
+    parse_no_errors("macro anonymous_map_param(@[x]) { 1 }");
+    parse_no_errors("macro one() { 1 }\nBEGIN { print(one()); print(one); }");
 
     parse_no_errors("#include <linux/sched.h>");
     parse_no_errors("#define MAX 100");
@@ -187,6 +193,45 @@ fn test_calls() {
         panic!("not an expression!");
     };
     assert!(matches!(call.as_ref(), Expr::Call(_)));
+}
+
+#[test]
+fn test_macros() {
+    let prog = parse(
+        r#"macro add_one_to_each($a, @b, x) {
+        $a += 1;
+        @b += 1;
+        x + 1
+    }
+
+    BEGIN {
+        add_one_to_each($x, @y, 1 + 2);
+    }"#,
+    )
+    .unwrap();
+
+    assert_eq!(prog.preambles.len(), 2);
+
+    let Preamble::Macro(mac) = &prog.preambles[0] else {
+        panic!("not a macro!");
+    };
+    assert_eq!(mac.name.name, "add_one_to_each");
+    assert_eq!(mac.params.len(), 3);
+    assert_eq!(mac.params[0].name().kind, IdentKind::Scratch);
+    assert_eq!(mac.params[1].name().kind, IdentKind::Map);
+    assert_eq!(mac.params[2].name().kind, IdentKind::Bare);
+
+    let Preamble::Probe(probe) = &prog.preambles[1] else {
+        panic!("not a probe!");
+    };
+    let Statement::Expr(call, _) = &probe.block.statements[0] else {
+        panic!("not an expression!");
+    };
+    let Expr::Call(call) = call.as_ref() else {
+        panic!("not a call!");
+    };
+    assert_eq!(call.func.name, "add_one_to_each");
+    assert_eq!(call.args.len(), 3);
 }
 
 #[test]
