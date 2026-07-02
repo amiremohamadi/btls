@@ -3,7 +3,7 @@ SPACE      = _{ " " | "\t" }
 COMMENT    = _{ "//" ~ (!NEWLINE ~ ANY)* ~ NEWLINE? }
 NEWLINE    = _{ "\r\n" | "\n" }
 
-identifier = @{ (ASCII_ALPHANUMERIC | "_")+ }
+identifier = @{ ("_" | ASCII_ALPHA) ~ ("_" | ASCII_ALPHANUMERIC)* }
 string     = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
 number     = @{ ASCII_DIGIT+ }
 
@@ -15,6 +15,9 @@ scratch_var = { "$" ~ identifier }
 map_var     = { "@" ~ (identifier ~ map_keys? | map_keys)? }
 variable    = { scratch_var | map_var }
 map_keys    =  { "[" ~ expr_list ~ "]" }
+
+macro_param     = { scratch_var | map_var | identifier }
+macro_params    = { macro_param ~ ("," ~ macro_param)* }
 
 primary   =  {
     string
@@ -69,6 +72,7 @@ else       =  { "else" ~ (if | block) }
 while      =  { "while" ~ "(" ~ expr ~ ")" ~ block }
 for        =  { "for" ~ "(" ~ expr ~ ":" ~ expr ~ ")" ~ block }
 unroll     =  { "unroll" ~ "(" ~ number ~ ")" ~ block }
+macro_def  =  { "macro" ~ identifier ~ "(" ~ macro_params? ~ ")" ~ block }
 base_stmt  = _{ assignment | expr }
 statement  =  { if | while | for | unroll | base_stmt ~ ";"? }
 block      =  { "{" ~ (COMMENT | statement | error)* ~ ("}" | EOI) }
@@ -91,7 +95,7 @@ cfg_value  = { identifier | number | string }
 cfg_assign = { identifier ~ "=" ~ cfg_value? ~ ";"? }
 cfg_block  = { "config" ~ "=" ~ "{" ~ (COMMENT | cfg_assign | error)* ~ "}" }
 
-preamble          = { cfg_block | cdef | probe }
+preamble          = { cfg_block | cdef | macro_def | probe }
 error             =  { rest_of_line }
 rest_of_line      = @{ (!(NEWLINE | "}") ~ ANY)+ ~ NEWLINE? }
 unmatched_brace   = { "}" }

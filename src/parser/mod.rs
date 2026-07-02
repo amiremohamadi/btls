@@ -212,11 +212,34 @@ pub enum IdentKind {
     Map,
 }
 
+impl IdentKind {
+    pub fn prefix(self) -> &'static str {
+        match self {
+            IdentKind::Scratch => "$",
+            IdentKind::Map => "@",
+            IdentKind::Bare => "",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MacroParamKind {
+    Expr,
+    Scratch,
+    Map,
+}
+
 #[derive(Debug)]
 pub struct Identifier<'a> {
     pub name: &'a str,
     pub span: Span<'a>,
     pub kind: IdentKind,
+}
+
+impl<'a> Identifier<'a> {
+    pub fn prefixed_name(&self) -> String {
+        format!("{}{}", self.kind.prefix(), self.name)
+    }
 }
 
 impl<'a> Node<'a> for Identifier<'a> {
@@ -545,6 +568,84 @@ impl<'a> Node<'a> for Call<'a> {
     fn children(&self) -> Vec<&dyn Node<'a>> {
         let mut children: Vec<&dyn Node> = vec![&self.func];
         children.extend(self.args.iter().map(|x| x.as_node()));
+        children
+    }
+
+    fn span(&self) -> Span<'a> {
+        self.span
+    }
+}
+
+#[derive(Debug)]
+pub enum MacroParam<'a> {
+    Expr {
+        name: Identifier<'a>,
+        span: Span<'a>,
+    },
+    Scratch {
+        name: Identifier<'a>,
+        span: Span<'a>,
+    },
+    Map {
+        name: Identifier<'a>,
+        keyed: bool,
+        span: Span<'a>,
+    },
+}
+
+impl<'a> MacroParam<'a> {
+    pub fn name(&self) -> &Identifier<'a> {
+        match self {
+            MacroParam::Expr { name, .. }
+            | MacroParam::Scratch { name, .. }
+            | MacroParam::Map { name, .. } => name,
+        }
+    }
+
+    pub fn kind(&self) -> MacroParamKind {
+        match self {
+            MacroParam::Expr { .. } => MacroParamKind::Expr,
+            MacroParam::Scratch { .. } => MacroParamKind::Scratch,
+            MacroParam::Map { .. } => MacroParamKind::Map,
+        }
+    }
+}
+
+impl<'a> Node<'a> for MacroParam<'a> {
+    fn as_node(&self) -> &dyn Node<'a> {
+        self
+    }
+
+    fn children(&self) -> Vec<&dyn Node<'a>> {
+        vec![self.name().as_node()]
+    }
+
+    fn span(&self) -> Span<'a> {
+        match self {
+            MacroParam::Expr { span, .. }
+            | MacroParam::Scratch { span, .. }
+            | MacroParam::Map { span, .. } => *span,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct MacroDefinition<'a> {
+    pub name: Identifier<'a>,
+    pub params: Vec<MacroParam<'a>>,
+    pub body: Block<'a>,
+    pub span: Span<'a>,
+}
+
+impl<'a> Node<'a> for MacroDefinition<'a> {
+    fn as_node(&self) -> &dyn Node<'a> {
+        self
+    }
+
+    fn children(&self) -> Vec<&dyn Node<'a>> {
+        let mut children: Vec<&dyn Node<'a>> = vec![self.name.as_node()];
+        children.extend(self.params.iter().map(|param| param.as_node()));
+        children.push(self.body.as_node());
         children
     }
 
@@ -913,6 +1014,7 @@ impl<'a> Node<'a> for Config<'a> {
 pub enum Preamble<'a> {
     Probe(Probe<'a>),
     CDef(Box<CDef<'a>>),
+    Macro(Box<MacroDefinition<'a>>),
     Config(Box<Config<'a>>),
     Error(Box<ErrorPreamble<'a>>),
 }
@@ -933,6 +1035,7 @@ impl<'a> Node<'a> for Preamble<'a> {
         match self {
             Self::Probe(p) => p.children(),
             Self::CDef(c) => vec![c.as_node()],
+            Self::Macro(m) => vec![m.as_node()],
             Self::Config(c) => vec![c.as_node()],
             Self::Error(e) => vec![e.as_node()],
         }
@@ -942,6 +1045,7 @@ impl<'a> Node<'a> for Preamble<'a> {
         match self {
             Self::Probe(p) => p.span(),
             Self::CDef(c) => c.span(),
+            Self::Macro(m) => m.span(),
             Self::Config(c) => c.span(),
             Self::Error(e) => e.span(),
         }

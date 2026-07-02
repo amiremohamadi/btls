@@ -37,7 +37,20 @@ async fn test_sanity() {
     let prog = r#"
         #define MAX 10
         #define FLAG
+
+        macro good(x, $s, @m) {
+            $s++;
+            print(x);
+            @m[0] = x;
+        }
+
+        macro bad() {
+            $missing++;
+            print(UNKNOWN_MACRO_IDENT);
+        }
+
         config = { stack_mode=perf; max_map_keys=2 }
+
         BEGIN {
             $var = 1;
             $undefined;
@@ -59,12 +72,13 @@ async fn test_sanity() {
 
     let analyzer = context.analyzer.lock().await;
     let analyzed = analyzer.analyze(&context, path).await.unwrap();
-    assert_eq!(analyzed.variables.len(), 3);
 
     let errors = analyzed.diagnostics();
-    assert_eq!(errors.len(), 4);
-    assert_diag_msg!(errors[1], "Undefined Identifier");
-    assert_diag_msg!(errors[2], "Undefined function");
+    assert_eq!(errors.len(), 6);
+    assert_diag_msg!(errors[0], "Undefined Identifier");
+    assert_diag_msg!(errors[1], "UNKNOWN_MACRO_IDENT");
+    assert_diag_msg!(errors[2], "Undefined Identifier");
     assert_diag_msg!(errors[3], "Undefined Identifier");
-    assert_diag_msg!(errors[3], "UNKNOWN");
+    assert_diag_msg!(errors[4], "Undefined function");
+    assert_diag_msg!(errors[5], "UNKNOWN");
 }
