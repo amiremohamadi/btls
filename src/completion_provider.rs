@@ -75,15 +75,36 @@ pub async fn completion(
     let builtin_funcs =
         builtin_to_completion_item!(BUILTINS.functions, CompletionItemKind::FUNCTION);
 
+    let macros = macro_completion_items(analyzed.ast(), offset);
+
     Ok(Some(CompletionResponse::Array(
         variables
             .into_iter()
+            .chain(macros)
             .chain(builtin_keywords)
             .chain(syntax_keywords)
             .chain(data_types)
             .chain(builtin_funcs)
             .collect(),
     )))
+}
+
+fn macro_completion_items(program: &Program, offset: usize) -> Vec<CompletionItem> {
+    semantic_analyzer::macros_at(program, offset)
+        .into_iter()
+        .map(|r#macro| CompletionItem {
+            label: r#macro.name.name.to_string(),
+            kind: Some(CompletionItemKind::FUNCTION),
+            detail: Some(r#macro.to_string()),
+            documentation: (!r#macro.comments.is_empty()).then(|| {
+                Documentation::MarkupContent(MarkupContent {
+                    kind: MarkupKind::Markdown,
+                    value: r#macro.comments.join("\n"),
+                })
+            }),
+            ..Default::default()
+        })
+        .collect()
 }
 
 enum ConfigContext {
@@ -209,6 +230,28 @@ fn cfg_completion(config: &Config, offset: usize) -> Vec<CompletionItem> {
 mod tests {
     use super::*;
     use crate::parser::{self, ast};
+
+    #[test]
+    fn test_macro_completion() {
+        let src = r#"// increments its argument
+        // in place
+        macro inc($x) { $x += 1 }
+        BEGIN {  }"#;
+        let program = ast::parse(src).unwrap();
+
+        let items = macro_completion_items(&program, src.len());
+        assert_eq!(items.len(), 1);
+
+        let item = &items[0];
+        assert_eq!(item.label, "inc");
+        assert_eq!(item.kind, Some(CompletionItemKind::FUNCTION));
+        assert_eq!(item.detail.as_deref(), Some("macro inc($x)"));
+
+        let Some(Documentation::MarkupContent(doc)) = &item.documentation else {
+            panic!("expected docs!");
+        };
+        assert_eq!(doc.value, "increments its argument\nin place");
+    }
 
     #[test]
     fn test_smoke() {

@@ -18,6 +18,16 @@ pub async fn goto_definition(
         return Ok(None);
     };
 
+    let line_index = &analyzed.document.line_index;
+    let uri = Url::from_file_path(path).map_err(|_| Error::new(ErrorCode::InternalError))?;
+
+    if let Some(def_span) = resolve_macro_def(analyzed.ast(), offset) {
+        return Ok(Some(GotoDefinitionResponse::Scalar(Location {
+            uri,
+            range: line_index.range(def_span),
+        })));
+    }
+
     let Some(variable) = resolve_variable(analyzed.ast(), offset) else {
         return Ok(None);
     };
@@ -25,12 +35,10 @@ pub async fn goto_definition(
         return Ok(None);
     };
 
-    let line_index = &analyzed.document.line_index;
     let def_range = Range {
         start: line_index.position(definition.offset),
-        end: line_index.position(definition.offset + definition.text.len()),
+        end: line_index.position(definition.offset + definition.len),
     };
-    let uri = Url::from_file_path(path).map_err(|_| Error::new(ErrorCode::InternalError))?;
 
     Ok(Some(GotoDefinitionResponse::Scalar(Location {
         uri,
@@ -68,7 +76,7 @@ pub async fn references(
         .map(|(_, loc)| {
             let range = Range {
                 start: line_index.position(loc.offset),
-                end: line_index.position(loc.offset + loc.text.len()),
+                end: line_index.position(loc.offset + loc.len),
             };
             Location {
                 uri: uri.clone(),
@@ -95,22 +103,27 @@ async fn analyze_document<'a>(context: &Context, path: &Path) -> Result<Analyzed
 }
 
 fn resolve_variable<'a>(program: &'a Program<'a>, offset: usize) -> Option<VarInfo> {
-    let (name, kind) = identifier_at_offset(program, offset)?;
-    let name = match kind {
-        IdentKind::Scratch => format!("${}", name),
-        IdentKind::Map => format!("@{}", name),
-        IdentKind::Bare => return None,
-    };
+    let ident = identifier_at_offset(program, offset)?;
+    if ident.kind == IdentKind::Bare {
+        return None;
+    }
 
     semantic_analyzer::variables_at(program, offset)
         .into_iter()
-        .find(|variable| variable.name == name)
+        .find(|variable| variable.name == ident.prefixed_name())
 }
 
-fn identifier_at_offset<'a>(
-    program: &'a Program<'a>,
-    offset: usize,
-) -> Option<(&'a str, IdentKind)> {
+fn resolve_macro_def<'a>(program: &'a Program<'a>, offset: usize) -> Option<Span<'a>> {
+    let ident = identifier_at_offset(program, offset)?;
+    if ident.kind != IdentKind::Bare {
+        return None;
+    }
+    semantic_analyzer::collect_macros(program)
+        .get(ident.name)
+        .map(|r#macro| r#macro.name.span)
+}
+
+fn identifier_at_offset<'a>(program: &'a Program<'a>, offset: usize) -> Option<&'a Identifier<'a>> {
     for node in Walk::new(program.as_node()) {
         let span = node.span();
         let check_start = span.start().saturating_sub(1);
@@ -160,9 +173,9 @@ fn identifier_at_offset<'a>(
     None
 }
 
-fn ident_at<'a>(ident: &'a Identifier<'a>, offset: usize) -> Option<(&'a str, IdentKind)> {
+fn ident_at<'a>(ident: &'a Identifier<'a>, offset: usize) -> Option<&'a Identifier<'a>> {
     let span = ident_span(ident);
-    (span.start() <= offset && offset < span.end()).then_some((ident.name, ident.kind))
+    (span.start() <= offset && offset < span.end()).then_some(ident)
 }
 
 fn ident_span<'a>(ident: &'a Identifier<'a>) -> Span<'a> {

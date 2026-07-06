@@ -104,7 +104,7 @@ fn convert_macro_param(pair: Pair<Rule>) -> MacroParam {
     }
 }
 
-fn convert_macro_def(pair: Pair<Rule>) -> MacroDefinition {
+fn convert_macro_def<'a>(pair: Pair<'a, Rule>, comments: Vec<&'a str>) -> MacroDefinition<'a> {
     assert!(matches!(pair.as_rule(), Rule::macro_def));
     let span = pair.as_span();
     let mut pairs = pair.into_inner();
@@ -126,8 +126,17 @@ fn convert_macro_def(pair: Pair<Rule>) -> MacroDefinition {
         name,
         params,
         body: convert_block(body),
+        comments,
         span,
     }
+}
+
+fn convert_comment(pair: Pair<Rule>) -> &str {
+    assert!(matches!(pair.as_rule(), Rule::comment));
+    pair.into_inner()
+        .next()
+        .map(|content| content.as_str().trim_end())
+        .unwrap_or("")
 }
 
 fn convert_var_to_expr(pair: Pair<Rule>) -> Expr {
@@ -696,14 +705,14 @@ fn convert_config(pair: Pair<Rule>) -> Config {
     Config { assignments, span }
 }
 
-fn convert_preamble(pair: Pair<Rule>) -> Preamble {
+fn convert_preamble<'a>(pair: Pair<'a, Rule>, comments: Vec<&'a str>) -> Preamble<'a> {
     assert!(matches!(pair.as_rule(), Rule::preamble));
     let pair = pair.into_inner().exactly_one().unwrap();
     match pair.as_rule() {
         Rule::cfg_block => Preamble::Config(Box::new(convert_config(pair))),
         Rule::probe => Preamble::Probe(convert_probe(pair)),
         Rule::cdef => Preamble::CDef(Box::new(convert_cdef(pair))),
-        Rule::macro_def => Preamble::Macro(Box::new(convert_macro_def(pair))),
+        Rule::macro_def => Preamble::Macro(Box::new(convert_macro_def(pair, comments))),
         _ => unreachable!(),
     }
 }
@@ -711,10 +720,15 @@ fn convert_preamble(pair: Pair<Rule>) -> Preamble {
 fn convert_prog(pair: Pair<Rule>) -> Program {
     assert!(matches!(pair.as_rule(), Rule::program));
     let span = pair.as_span();
+    let mut comments = Vec::new();
     let preambles = pair
         .into_inner()
         .filter_map(|pair| match pair.as_rule() {
-            Rule::preamble => Some(convert_preamble(pair)),
+            Rule::comment => {
+                comments.push(convert_comment(pair));
+                None
+            }
+            Rule::preamble => Some(convert_preamble(pair, std::mem::take(&mut comments))),
             Rule::error => Some(Preamble::Error(Box::new(ErrorPreamble::UnknownPreamble(
                 Box::new(UnknownPreamble {
                     text: pair.as_str(),

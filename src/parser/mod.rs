@@ -2,6 +2,7 @@ pub mod ast;
 mod tests;
 
 use pest::Span;
+use std::fmt;
 use std::iter::FilterMap;
 
 pub trait Node<'a> {
@@ -634,7 +635,20 @@ pub struct MacroDefinition<'a> {
     pub name: Identifier<'a>,
     pub params: Vec<MacroParam<'a>>,
     pub body: Block<'a>,
+    pub comments: Vec<&'a str>,
     pub span: Span<'a>,
+}
+
+impl fmt::Display for MacroDefinition<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let params = self
+            .params
+            .iter()
+            .map(|param| param.name().prefixed_name())
+            .collect::<Vec<_>>()
+            .join(", ");
+        write!(f, "macro {}({})", self.name.name, params)
+    }
 }
 
 impl<'a> Node<'a> for MacroDefinition<'a> {
