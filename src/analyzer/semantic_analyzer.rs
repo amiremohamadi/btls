@@ -643,9 +643,13 @@ impl<'a> ErrorChecker<'a> {
     }
 
     fn check_block(&mut self, block: &Block, scope: &mut ScopeTracker) {
-        for stmt in &block.statements {
+        let mut statements = block.statements.iter().peekable();
+        while let Some(stmt) = statements.next() {
             self.emit_diag(stmt);
-            self.check_semicolon(stmt);
+            // hacky approach to make it optional for the last statement
+            if statements.peek().is_some() {
+                self.check_semicolon(stmt);
+            }
             match stmt {
                 Statement::Assignment(assign, _) => {
                     self.check_expr(&assign.rvalue, scope);

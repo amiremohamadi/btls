@@ -159,13 +159,14 @@ fn test_statements() {
         $y += 6;
         $x -= 0;
         $str = "string";
+        $last_stmt_without_semicolon = 2
     }"#,
     )
     .unwrap();
     let Preamble::Probe(probe) = &prog.preambles[0] else {
         panic!("not a probe!");
     };
-    assert_eq!(probe.block.statements.len(), 5);
+    assert_eq!(probe.block.statements.len(), 6);
     assert!(matches!(
         probe.block.statements[0],
         Statement::Assignment(_, _)
