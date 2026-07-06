@@ -31,7 +31,7 @@ impl fmt::Display for MacroParamKind {
 #[derive(Debug, Clone)]
 pub struct VarLoc {
     pub offset: usize,
-    pub text: String,
+    pub len: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -95,7 +95,7 @@ fn collect_defines(program: &Program) -> Vec<RawVar> {
                     define.name.name.to_string(),
                     VarLoc {
                         offset: define.span.start(),
-                        text: define.span.as_str().to_string(),
+                        len: define.span.as_str().len(),
                     },
                 ));
             }
@@ -104,14 +104,25 @@ fn collect_defines(program: &Program) -> Vec<RawVar> {
     defines
 }
 
-fn collect_macros<'a>(program: &'a Program<'a>) -> HashMap<String, &'a MacroDefinition<'a>> {
+pub fn collect_macros<'a>(program: &'a Program<'a>) -> HashMap<String, &'a MacroDefinition<'a>> {
     let mut macros = HashMap::new();
     for preamble in &program.preambles {
-        if let Preamble::Macro(mac) = preamble {
-            macros.insert(mac.name.name.to_string(), mac.as_ref());
+        if let Preamble::Macro(r#macro) = preamble {
+            macros.insert(r#macro.name.name.to_string(), r#macro.as_ref());
         }
     }
     macros
+}
+
+pub fn macros_at<'a>(program: &'a Program<'a>, offset: usize) -> Vec<&'a MacroDefinition<'a>> {
+    program
+        .preambles
+        .iter()
+        .filter_map(|preamble| match preamble {
+            Preamble::Macro(r#macro) if r#macro.span.start() <= offset => Some(r#macro.as_ref()),
+            _ => None,
+        })
+        .collect()
 }
 
 #[derive(Debug, Clone)]
@@ -324,7 +335,7 @@ fn collect_maps_in_block(block: &Block, maps: &mut Vec<RawVar>) {
                     format!("@{}", map_name),
                     VarLoc {
                         offset: assign.span.start(),
-                        text: assign.span.as_str().to_string(),
+                        len: assign.span.as_str().len(),
                     },
                 ));
             }
@@ -339,7 +350,7 @@ fn collect_maps_in_block(block: &Block, maps: &mut Vec<RawVar>) {
                         format!("@{}", map_name),
                         VarLoc {
                             offset: loop_stmt.span().start(),
-                            text: loop_stmt.span().as_str().to_string(),
+                            len: loop_stmt.span().as_str().len(),
                         },
                     ));
                     collect_maps_in_block(&for_loop.block, maps);
@@ -369,7 +380,7 @@ fn collect_maps_in_block(block: &Block, maps: &mut Vec<RawVar>) {
                             format!("@{}", map_name),
                             VarLoc {
                                 offset: unary.span.start(),
-                                text: unary.span.as_str().to_string(),
+                                len: unary.span.as_str().len(),
                             },
                         ));
                     }
@@ -431,7 +442,7 @@ fn collect_vars_in_block(block: &Block, offset: usize, vars: &mut Vec<RawVar>) {
                         ident.prefixed_name(),
                         VarLoc {
                             offset: assign.span.start(),
-                            text: assign.span.as_str().to_string(),
+                            len: assign.span.as_str().len(),
                         },
                     ));
                 }
@@ -444,7 +455,7 @@ fn collect_vars_in_block(block: &Block, offset: usize, vars: &mut Vec<RawVar>) {
                                 ident.prefixed_name(),
                                 VarLoc {
                                     offset: loop_stmt.span().start(),
-                                    text: loop_stmt.span().as_str().to_string(),
+                                    len: loop_stmt.span().as_str().len(),
                                 },
                             ));
                         }
@@ -487,7 +498,7 @@ fn collect_vars_in_block(block: &Block, offset: usize, vars: &mut Vec<RawVar>) {
                                 ident.prefixed_name(),
                                 VarLoc {
                                     offset: unary.span.start(),
-                                    text: unary.span.as_str().to_string(),
+                                    len: unary.span.as_str().len(),
                                 },
                             ));
                         }
@@ -567,7 +578,7 @@ impl<'a> ErrorChecker<'a> {
                         }
                     }
                 }
-                Preamble::Macro(mac) => self.check_macro(mac),
+                Preamble::Macro(r#macro) => self.check_macro(r#macro),
                 Preamble::Config(_) => {}
                 Preamble::Error(e) => {
                     self.push_span(e.span(), DiagnosticSeverity::ERROR, e.diagnosis())
@@ -719,8 +730,8 @@ impl<'a> ErrorChecker<'a> {
                 }
             },
             Expr::Call(call) => {
-                if let Some(mac) = self.macros.get(call.func.name) {
-                    self.check_macro_call(mac, call.args.as_slice(), call.span());
+                if let Some(r#macro) = self.macros.get(call.func.name) {
+                    self.check_macro_call(r#macro, call.args.as_slice(), call.span());
                 } else if !BUILTINS.functions.iter().any(|f| f.name == call.func.name) {
                     self.emit_diag(&UndefinedFunc::new(call.func.name, call.span()));
                 }

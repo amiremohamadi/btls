@@ -198,28 +198,32 @@ fn test_calls() {
 #[test]
 fn test_macros() {
     let prog = parse(
-        r#"macro add_one_to_each($a, @b, x) {
-        $a += 1;
-        @b += 1;
-        x + 1
-    }
+        r#"
+        // first line
+        // second line
+        macro add_one_to_each($a, @b, x) {
+            $a += 1;
+            @b += 1;
+            x + 1
+        }
 
-    BEGIN {
-        add_one_to_each($x, @y, 1 + 2);
-    }"#,
+        BEGIN {
+            add_one_to_each($x, @y, 1 + 2);
+        }"#,
     )
     .unwrap();
 
     assert_eq!(prog.preambles.len(), 2);
 
-    let Preamble::Macro(mac) = &prog.preambles[0] else {
+    let Preamble::Macro(r#macro) = &prog.preambles[0] else {
         panic!("not a macro!");
     };
-    assert_eq!(mac.name.name, "add_one_to_each");
-    assert_eq!(mac.params.len(), 3);
-    assert_eq!(mac.params[0].name().kind, IdentKind::Scratch);
-    assert_eq!(mac.params[1].name().kind, IdentKind::Map);
-    assert_eq!(mac.params[2].name().kind, IdentKind::Bare);
+    assert_eq!(r#macro.name.name, "add_one_to_each");
+    assert_eq!(r#macro.comments, vec!["first line", "second line"]);
+    assert_eq!(r#macro.params.len(), 3);
+    assert_eq!(r#macro.params[0].name().kind, IdentKind::Scratch);
+    assert_eq!(r#macro.params[1].name().kind, IdentKind::Map);
+    assert_eq!(r#macro.params[2].name().kind, IdentKind::Bare);
 
     let Preamble::Probe(probe) = &prog.preambles[1] else {
         panic!("not a probe!");

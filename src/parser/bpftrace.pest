@@ -1,7 +1,9 @@
 WHITESPACE = _{ (" " | "\t" | "\r" | "\n")+ }
 SPACE      = _{ " " | "\t" }
-COMMENT    = _{ "//" ~ (!NEWLINE ~ ANY)* ~ NEWLINE? }
 NEWLINE    = _{ "\r\n" | "\n" }
+
+comment         = ${ "//" ~ " "? ~ comment_content ~ NEWLINE? }
+comment_content = @{ (!NEWLINE ~ ANY)* }
 
 identifier = @{ ("_" | ASCII_ALPHA) ~ ("_" | ASCII_ALPHANUMERIC)* }
 string     = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
@@ -75,7 +77,7 @@ unroll     =  { "unroll" ~ "(" ~ number ~ ")" ~ block }
 macro_def  =  { "macro" ~ identifier ~ "(" ~ macro_params? ~ ")" ~ block }
 base_stmt  = _{ assignment | expr }
 statement  =  { if | while | for | unroll | base_stmt ~ ";"? }
-block      =  { "{" ~ (COMMENT | statement | error)* ~ ("}" | EOI) }
+block      =  { "{" ~ (comment | statement | error)* ~ ("}" | EOI) }
 
 attach_point      = @{ (identifier | ":" | "*")+ }
 attach_point_list = { attach_point ~ ("," ~ attach_point)* }
@@ -87,16 +89,16 @@ include      = ${ "#include" ~ SPACE+ ~ include_path }
 include_path = @{ "<" ~ (!(">" | NEWLINE) ~ ANY)* ~ ">" }
 define       = ${ "#define" ~ SPACE+ ~ identifier ~ (SPACE+ ~ define_body)? }
 define_body  = @{ (!NEWLINE ~ ANY)+ }
-struct_def   = { struct_kw ~ identifier ~ "{" ~ (field_decl | COMMENT | error)* ~ "}" ~ ";"? }
+struct_def   = { struct_kw ~ identifier ~ "{" ~ (field_decl | comment | error)* ~ "}" ~ ";"? }
 field_decl   = { type_name ~ identifier ~ array_suffix? ~ ";" }
 array_suffix = { "[" ~ number ~ "]" }
 
 cfg_value  = { identifier | number | string }
 cfg_assign = { identifier ~ "=" ~ cfg_value? ~ ";"? }
-cfg_block  = { "config" ~ "=" ~ "{" ~ (COMMENT | cfg_assign | error)* ~ "}" }
+cfg_block  = { "config" ~ "=" ~ "{" ~ (comment | cfg_assign | error)* ~ "}" }
 
 preamble          = { cfg_block | cdef | macro_def | probe }
 error             =  { rest_of_line }
 rest_of_line      = @{ (!(NEWLINE | "}") ~ ANY)+ ~ NEWLINE? }
 unmatched_brace   = { "}" }
-program           = { SOI ~ (COMMENT | preamble | error | unmatched_brace)* ~ EOI }
+program           = { SOI ~ (comment | preamble | error | unmatched_brace)* ~ EOI }
