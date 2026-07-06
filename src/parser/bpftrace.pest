@@ -2,8 +2,11 @@ WHITESPACE = _{ (" " | "\t" | "\r" | "\n")+ }
 SPACE      = _{ " " | "\t" }
 NEWLINE    = _{ "\r\n" | "\n" }
 
-comment         = ${ "//" ~ " "? ~ comment_content ~ NEWLINE? }
-comment_content = @{ (!NEWLINE ~ ANY)* }
+comment               = ${ line_comment | block_comment }
+line_comment          = { "//" ~ " "? ~ line_comment_content ~ NEWLINE? }
+line_comment_content  = @{ (!NEWLINE ~ ANY)* }
+block_comment         = { "/*" ~ block_comment_content ~ "*/" }
+block_comment_content = @{ (!"*/" ~ ANY)* }
 
 identifier = @{ ("_" | ASCII_ALPHA) ~ ("_" | ASCII_ALPHANUMERIC)* }
 string     = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }

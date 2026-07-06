@@ -135,7 +135,8 @@ fn convert_comment(pair: Pair<Rule>) -> &str {
     assert!(matches!(pair.as_rule(), Rule::comment));
     pair.into_inner()
         .next()
-        .map(|content| content.as_str().trim_end())
+        .and_then(|comment| comment.into_inner().next())
+        .map(|content| content.as_str().trim())
         .unwrap_or("")
 }
 

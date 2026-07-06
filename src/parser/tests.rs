@@ -42,6 +42,7 @@ fn parse_has_errors(input: &str) {
 fn test_sanity() {
     parse_no_errors("");
     parse_no_errors("// this is a comment");
+    parse_no_errors("/* multi\nline\ncomment */");
     parse_no_errors("BEGIN {}");
     parse_no_errors("END {}");
     parse_no_errors("tracepoint:sched:* {}");
