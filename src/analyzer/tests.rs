@@ -51,6 +51,10 @@ async fn test_sanity() {
 
         config = { stack_mode=perf; max_map_keys=2 }
 
+        fentry:napi_gro_receive {
+            $len = args.skb->len;
+        }
+
         BEGIN {
             $var = 1;
             $undefined;

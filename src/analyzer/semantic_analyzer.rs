@@ -291,6 +291,15 @@ pub fn resolve_expr_type(
         Expr::Identifier(ident) if ident.kind == IdentKind::Scratch => {
             var_types.get(&format!("${}", ident.name)).cloned()
         }
+        // TODO: we don't support btf completion/diagnosis. it's just a workaround
+        // to avoid reporting errors on "args" for now
+        Expr::Identifier(ident) if ident.kind == IdentKind::Bare && ident.name == "args" => {
+            Some(TypeInfo::StructLike {
+                kind: TypeKind::Struct,
+                name: "args".to_string(),
+                pointers: 0,
+            })
+        }
         Expr::UnaryExpr(u) if u.op == UnaryOp::Deref => {
             resolve_expr_type(&u.expr, structs, var_types)
         }
@@ -298,6 +307,8 @@ pub fn resolve_expr_type(
             let base_type = resolve_expr_type(&fa.base, structs, var_types)?;
             let field = fa.field.as_ref()?;
             match &base_type {
+                // TODO:
+                TypeInfo::StructLike { name, .. } if name == "args" => Some(base_type),
                 TypeInfo::StructLike { name, .. } => structs
                     .get(name)?
                     .fields
@@ -614,6 +625,7 @@ impl<'a> ErrorChecker<'a> {
 
     fn check_probe(&mut self, probe: &Probe) {
         let mut scope = ScopeTracker::new();
+        scope.define("args", IdentKind::Bare);
         if let Some(cond) = &probe.condition {
             self.check_expr(cond, &scope);
         }
