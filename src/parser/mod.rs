@@ -410,6 +410,7 @@ pub enum Expr<'a> {
     Cast(Box<CastExpr<'a>>),
     ArgN(Box<ArgNExpr<'a>>),
     Field(Box<FieldAccess<'a>>),
+    Tuple(Box<Tuple<'a>>),
 }
 
 impl<'a> Node<'a> for Expr<'a> {
@@ -433,6 +434,7 @@ impl<'a> Node<'a> for Expr<'a> {
             Self::Cast(cast) => cast.children(),
             Self::ArgN(arg) => vec![arg.as_node()],
             Self::Field(field) => field.children(),
+            Self::Tuple(tuple) => tuple.children(),
         }
     }
 
@@ -448,6 +450,7 @@ impl<'a> Node<'a> for Expr<'a> {
             Self::Cast(cast) => cast.span(),
             Self::ArgN(arg) => arg.span(),
             Self::Field(field) => field.span(),
+            Self::Tuple(tuple) => tuple.span(),
         }
     }
 }
@@ -510,9 +513,24 @@ impl<'a> TypeName<'a> {
 }
 
 #[derive(Debug)]
+pub enum FieldMember<'a> {
+    Name(Identifier<'a>),
+    Index(u64, Span<'a>),
+}
+
+impl<'a> FieldMember<'a> {
+    pub fn span(&self) -> Span<'a> {
+        match self {
+            Self::Name(ident) => ident.span,
+            Self::Index(_, span) => *span,
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct FieldAccess<'a> {
     pub base: Box<Expr<'a>>,
-    pub field: Option<Identifier<'a>>,
+    pub field: Option<FieldMember<'a>>,
     pub span: Span<'a>,
 }
 
@@ -523,10 +541,30 @@ impl<'a> Node<'a> for FieldAccess<'a> {
 
     fn children(&self) -> Vec<&dyn Node<'a>> {
         let mut children: Vec<&dyn Node<'a>> = vec![&*self.base];
-        if let Some(field) = &self.field {
-            children.push(field.as_node());
+        if let Some(FieldMember::Name(ident)) = &self.field {
+            children.push(ident.as_node());
         }
         children
+    }
+
+    fn span(&self) -> Span<'a> {
+        self.span
+    }
+}
+
+#[derive(Debug)]
+pub struct Tuple<'a> {
+    pub elements: Vec<Expr<'a>>,
+    pub span: Span<'a>,
+}
+
+impl<'a> Node<'a> for Tuple<'a> {
+    fn as_node(&self) -> &dyn Node<'a> {
+        self
+    }
+
+    fn children(&self) -> Vec<&dyn Node<'a>> {
+        self.elements.iter().map(|e| e.as_node()).collect()
     }
 
     fn span(&self) -> Span<'a> {

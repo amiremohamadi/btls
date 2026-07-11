@@ -9,10 +9,10 @@ use pest::{
 use super::{
     ArgNExpr, AssignOp, Assignment, BinaryExpr, Block, CDef, Call, CastExpr, Config,
     ConfigAssignment, Define, Else, ErrorPreamble, ErrorStatement, Expr, FieldAccess, FieldDecl,
-    For, IdentKind, Identifier, If, Include, IntegerLiteral, Loop, Lvalue, MacroDefinition,
-    MacroParam, MacroParamKind, MapAccess, Node, Preamble, Probe, Program, Statement,
-    StringLiteral, StructDef, TypeKind, TypeName, UnaryExpr, UnaryOp, UnknownPreamble,
-    UnknownStatement, UnmatchedBrace, Unroll, While,
+    FieldMember, For, IdentKind, Identifier, If, Include, IntegerLiteral, Loop, Lvalue,
+    MacroDefinition, MacroParam, MacroParamKind, MapAccess, Node, Preamble, Probe, Program,
+    Statement, StringLiteral, StructDef, Tuple, TypeKind, TypeName, UnaryExpr, UnaryOp,
+    UnknownPreamble, UnknownStatement, UnmatchedBrace, Unroll, While,
 };
 
 #[derive(pest_derive::Parser)]
@@ -292,6 +292,7 @@ fn convert_primary_expr(pair: Pair<Rule>) -> Expr {
         Rule::string => Expr::String(Box::new(convert_str(pair))),
         Rule::call => Expr::Call(Box::new(convert_call(pair))),
         Rule::cast => convert_cast(pair),
+        Rule::tuple => convert_tuple(pair),
         Rule::paren_expr => {
             let inner = pair.into_inner().exactly_one().unwrap();
             convert_expr(inner)
@@ -300,6 +301,17 @@ fn convert_primary_expr(pair: Pair<Rule>) -> Expr {
         Rule::variable => convert_var_to_expr(pair),
         _ => unreachable!(),
     }
+}
+
+fn convert_tuple(pair: Pair<Rule>) -> Expr {
+    assert!(matches!(pair.as_rule(), Rule::tuple));
+    let span = pair.as_span();
+    let elements = pair
+        .into_inner()
+        .filter(|p| matches!(p.as_rule(), Rule::expr))
+        .map(convert_expr)
+        .collect();
+    Expr::Tuple(Box::new(Tuple { elements, span }))
 }
 
 fn convert_cast(pair: Pair<Rule>) -> Expr {
@@ -410,7 +422,14 @@ fn convert_expr(pair: Pair<Rule>) -> Expr {
             .unwrap();
             match op.as_rule() {
                 Rule::field_access => {
-                    let field = op.into_inner().next().map(convert_ident);
+                    let inner = op.into_inner().next();
+                    let field = inner.map(|p| {
+                        if matches!(p.as_rule(), Rule::number) {
+                            FieldMember::Index(p.as_str().parse().unwrap(), p.as_span())
+                        } else {
+                            FieldMember::Name(convert_ident(p))
+                        }
+                    });
                     Expr::Field(Box::new(FieldAccess {
                         base: Box::new(lhs),
                         field,

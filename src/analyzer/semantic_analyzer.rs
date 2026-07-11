@@ -4,9 +4,9 @@ use std::sync::Arc;
 use crate::builtins::BUILTINS;
 use crate::common::utils::OwnedLineIndex;
 use crate::parser::{
-    Block, CDef, Else, Expr, IdentKind, Loop, Lvalue, MacroDefinition, MacroParam, MacroParamKind,
-    Node, Preamble, Probe, Program, Statement, TypeKind, TypeName, UnaryOp, UndefinedFunc,
-    UndefinedIdent,
+    Block, CDef, Else, Expr, FieldMember, IdentKind, Loop, Lvalue, MacroDefinition, MacroParam,
+    MacroParamKind, Node, Preamble, Probe, Program, Statement, TypeKind, TypeName, UnaryOp,
+    UndefinedFunc, UndefinedIdent,
 };
 use crate::server::Context;
 use crate::storage::Document;
@@ -306,6 +306,10 @@ pub fn resolve_expr_type(
         Expr::Field(fa) => {
             let base_type = resolve_expr_type(&fa.base, structs, var_types)?;
             let field = fa.field.as_ref()?;
+            let field_name = match field {
+                FieldMember::Name(ident) => ident.name,
+                FieldMember::Index(idx, _) => &idx.to_string(),
+            };
             match &base_type {
                 // TODO:
                 TypeInfo::StructLike { name, .. } if name == "args" => Some(base_type),
@@ -313,7 +317,7 @@ pub fn resolve_expr_type(
                     .get(name)?
                     .fields
                     .iter()
-                    .find(|f| f.name == field.name)
+                    .find(|f| f.name == field_name)
                     .map(|f| f.type_name.clone()),
                 _ => None,
             }
@@ -784,6 +788,11 @@ impl<'a> ErrorChecker<'a> {
             Expr::Cast(cast) => {
                 self.check_expr(&cast.expr, scope);
             }
+            Expr::Tuple(tuple) => {
+                for element in &tuple.elements {
+                    self.check_expr(element, scope);
+                }
+            }
             Expr::Field(field) => {
                 self.check_expr(&field.base, scope);
                 let Some(member) = &field.field else {
@@ -792,11 +801,13 @@ impl<'a> ErrorChecker<'a> {
                 let Some(base_type) =
                     resolve_expr_type(&field.base, self.struct_defs, self.var_types)
                 else {
+                    // unresolved base type (e.g. tuple)
+                    // skip for now, but should be implemented later
                     return;
                 };
                 let TypeInfo::StructLike { name, .. } = &base_type else {
                     self.push_span(
-                        member.span,
+                        member.span(),
                         DiagnosticSeverity::ERROR,
                         format!("Field access is not supported on \"{}\"", base_type.name()),
                     );
@@ -805,11 +816,15 @@ impl<'a> ErrorChecker<'a> {
                 let Some(info) = self.struct_defs.get(name) else {
                     return;
                 };
-                if !info.fields.iter().any(|decl| decl.name == member.name) {
+                let member_name = match member {
+                    FieldMember::Name(ident) => ident.name,
+                    FieldMember::Index(idx, _) => &idx.to_string(),
+                };
+                if !info.fields.iter().any(|decl| decl.name == member_name) {
                     self.push_span(
-                        member.span,
+                        member.span(),
                         DiagnosticSeverity::ERROR,
-                        format!("\"{}\" has no field \"{}\"", base_type.name(), member.name),
+                        format!("\"{}\" has no field \"{}\"", base_type.name(), member_name),
                     );
                 }
             }

@@ -29,6 +29,7 @@ primary   =  {
   | number
   | call
   | cast
+  | tuple
   | paren_expr
   | arg_n
   | identifier
@@ -36,13 +37,14 @@ primary   =  {
 }
 
 cast        =  { "(" ~ type_name ~ ")" ~ expr }
+tuple       = { "(" ~ expr ~ ("," ~ expr)+ ~ ")" }
 paren_expr  = { "(" ~ expr ~ ")" }
 arg_n       = @{ "arg" ~ ASCII_DIGIT+ }
 
 infix       = _{ add | sub | mul | div | mod | le | lt | ge | gt | eq | ne | and | or }
 prefix      = _{ not | inc_prefix | dec_prefix | neg | pos | deref }
 postfix     = _{ inc_postfix | dec_postfix | field_access }
-field_access = { ("->" | ".") ~ identifier? }
+field_access = { ("->" | ".") ~ (identifier | number)? }
 
 add         =  { "+" }
 sub         =  { "-" }

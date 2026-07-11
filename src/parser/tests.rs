@@ -132,6 +132,9 @@ fn test_sanity() {
         &[("stack_mode", "perf"), ("max_map_keys", "2")],
     );
 
+    // tuples
+    parse_no_errors("BEGIN { $a = (1, 2); }");
+
     // field access
     parse_no_errors("BEGIN { $x = $f->pid; }");
     parse_no_errors("BEGIN { $x = $f.pid; }");
