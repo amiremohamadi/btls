@@ -1,6 +1,8 @@
 use std::fmt;
 use std::sync::Arc;
 
+use super::OwnedAst;
+use crate::btf::{self, BtfScope};
 use crate::builtins::BUILTINS;
 use crate::common::utils::OwnedLineIndex;
 use crate::parser::{
@@ -15,8 +17,6 @@ use pest::Span;
 use std::collections::HashMap;
 use std::path::Path;
 use tower_lsp::lsp_types::{Diagnostic, DiagnosticSeverity};
-
-use super::OwnedAst;
 
 impl fmt::Display for MacroParamKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -201,6 +201,28 @@ pub struct StructInfo {
     pub fields: Vec<FieldInfo>,
 }
 
+#[derive(Clone, Default)]
+pub struct StructScope<'a> {
+    layers: Vec<&'a HashMap<String, StructInfo>>,
+}
+
+impl<'a> StructScope<'a> {
+    pub fn new(base: &'a HashMap<String, StructInfo>) -> Self {
+        Self { layers: vec![base] }
+    }
+
+    pub fn with(&self, layer: &'a HashMap<String, StructInfo>) -> Self {
+        let mut layers = Vec::with_capacity(self.layers.len() + 1);
+        layers.push(layer);
+        layers.extend_from_slice(&self.layers);
+        Self { layers }
+    }
+
+    pub fn get(&self, name: &str) -> Option<&'a StructInfo> {
+        self.layers.iter().find_map(|layer| layer.get(name))
+    }
+}
+
 pub fn collect_structs(program: &Program) -> HashMap<String, StructInfo> {
     let mut structs = HashMap::new();
     for preamble in &program.preambles {
@@ -224,22 +246,35 @@ pub fn collect_structs(program: &Program) -> HashMap<String, StructInfo> {
     structs
 }
 
-pub fn collect_var_types(program: &Program) -> HashMap<String, TypeInfo> {
-    let structs = collect_structs(program);
+fn probe_args_layer(
+    probe: &Probe,
+    btf_scopes: &HashMap<String, Arc<BtfScope>>,
+) -> HashMap<String, StructInfo> {
+    let mut layer = HashMap::new();
+    if let Some(scope) = btf::probe_func(&probe.attach_points).and_then(|func| btf_scopes.get(func))
+    {
+        layer.insert("args".to_string(), scope.args.clone());
+    }
+    layer
+}
+
+pub fn collect_var_types_with_btf(
+    program: &Program,
+    base: &HashMap<String, StructInfo>,
+    btf_scopes: &HashMap<String, Arc<BtfScope>>,
+) -> HashMap<String, TypeInfo> {
+    let scope = StructScope::new(base);
     let mut types = HashMap::new();
     for preamble in &program.preambles {
         if let Preamble::Probe(probe) = preamble {
-            _collect_var_types(&probe.block, &structs, &mut types);
+            let args = probe_args_layer(probe, btf_scopes);
+            _collect_var_types(&probe.block, &scope.with(&args), &mut types);
         }
     }
     types
 }
 
-fn _collect_var_types(
-    block: &Block,
-    structs: &HashMap<String, StructInfo>,
-    types: &mut HashMap<String, TypeInfo>,
-) {
+fn _collect_var_types(block: &Block, structs: &StructScope, types: &mut HashMap<String, TypeInfo>) {
     for stmt in &block.statements {
         match stmt {
             Statement::Assignment(assign, _) => {
@@ -283,7 +318,7 @@ fn _collect_var_types(
 
 pub fn resolve_expr_type(
     expr: &Expr,
-    structs: &HashMap<String, StructInfo>,
+    structs: &StructScope,
     var_types: &HashMap<String, TypeInfo>,
 ) -> Option<TypeInfo> {
     match expr {
@@ -291,8 +326,6 @@ pub fn resolve_expr_type(
         Expr::Identifier(ident) if ident.kind == IdentKind::Scratch => {
             var_types.get(&format!("${}", ident.name)).cloned()
         }
-        // TODO: we don't support btf completion/diagnosis. it's just a workaround
-        // to avoid reporting errors on "args" for now
         Expr::Identifier(ident) if ident.kind == IdentKind::Bare && ident.name == "args" => {
             Some(TypeInfo::StructLike {
                 kind: TypeKind::Struct,
@@ -310,17 +343,15 @@ pub fn resolve_expr_type(
                 FieldMember::Name(ident) => ident.name,
                 FieldMember::Index(idx, _) => &idx.to_string(),
             };
-            match &base_type {
-                // TODO:
-                TypeInfo::StructLike { name, .. } if name == "args" => Some(base_type),
-                TypeInfo::StructLike { name, .. } => structs
-                    .get(name)?
-                    .fields
-                    .iter()
-                    .find(|f| f.name == field_name)
-                    .map(|f| f.type_name.clone()),
-                _ => None,
-            }
+            let TypeInfo::StructLike { name, .. } = &base_type else {
+                return None;
+            };
+            structs
+                .get(name)?
+                .fields
+                .iter()
+                .find(|f| f.name == field_name)
+                .map(|f| f.type_name.clone())
         }
         _ => None,
     }
@@ -568,6 +599,7 @@ struct ErrorChecker<'a> {
     macros: &'a HashMap<String, &'a MacroDefinition<'a>>,
     struct_defs: &'a HashMap<String, StructInfo>,
     var_types: &'a HashMap<String, TypeInfo>,
+    btf_scopes: &'a HashMap<String, Arc<BtfScope>>,
     line_index: &'a OwnedLineIndex,
     out: Vec<Diagnostic>,
 }
@@ -627,13 +659,15 @@ impl<'a> ErrorChecker<'a> {
         }
     }
 
-    fn check_probe(&mut self, probe: &Probe) {
+    fn check_probe(&mut self, probe: &'a Probe) {
+        let args = probe_args_layer(probe, self.btf_scopes);
+        let structs = StructScope::new(self.struct_defs).with(&args);
         let mut scope = ScopeTracker::new();
         scope.define("args", IdentKind::Bare);
         if let Some(cond) = &probe.condition {
-            self.check_expr(cond, &scope);
+            self.check_expr(cond, &scope, &structs);
         }
-        self.check_block(&probe.block, &mut scope);
+        self.check_block(&probe.block, &mut scope, &structs);
     }
 
     fn check_macro(&mut self, r#macro: &'a MacroDefinition<'a>) {
@@ -655,10 +689,12 @@ impl<'a> ErrorChecker<'a> {
             let name = param.name();
             scope.define(name.name, name.kind);
         }
-        self.check_block(&r#macro.body, &mut scope);
+
+        let structs = StructScope::new(self.struct_defs);
+        self.check_block(&r#macro.body, &mut scope, &structs);
     }
 
-    fn check_block(&mut self, block: &Block, scope: &mut ScopeTracker) {
+    fn check_block(&mut self, block: &Block, scope: &mut ScopeTracker, structs: &StructScope) {
         let mut statements = block.statements.iter().peekable();
         while let Some(stmt) = statements.next() {
             self.emit_diag(stmt);
@@ -668,14 +704,14 @@ impl<'a> ErrorChecker<'a> {
             }
             match stmt {
                 Statement::Assignment(assign, _) => {
-                    self.check_expr(&assign.rvalue, scope);
+                    self.check_expr(&assign.rvalue, scope, structs);
                     match &assign.lvalue {
                         Lvalue::Identifier(ident) if ident.kind != IdentKind::Map => {
                             scope.define(ident.name, ident.kind);
                         }
                         Lvalue::MapAccess(access) => {
                             for key in &access.keys {
-                                self.check_expr(key, scope);
+                                self.check_expr(key, scope, structs);
                             }
                         }
                         _ => {}
@@ -683,42 +719,42 @@ impl<'a> ErrorChecker<'a> {
                 }
                 Statement::Loop(loop_stmt) => match loop_stmt.as_ref() {
                     Loop::For(for_loop) => {
-                        self.check_expr(&for_loop.rhs, scope);
+                        self.check_expr(&for_loop.rhs, scope, structs);
                         if let Expr::Identifier(ident) = for_loop.lhs.as_ref() {
                             if ident.kind != IdentKind::Map {
                                 scope.define(ident.name, ident.kind);
                             }
                         }
                         let mut inner = scope.clone();
-                        self.check_block(&for_loop.block, &mut inner);
+                        self.check_block(&for_loop.block, &mut inner, structs);
                     }
                     Loop::While(w) => {
-                        self.check_expr(&w.condition, scope);
+                        self.check_expr(&w.condition, scope, structs);
                         let mut inner = scope.clone();
-                        self.check_block(&w.block, &mut inner);
+                        self.check_block(&w.block, &mut inner, structs);
                     }
                     Loop::Unroll(u) => {
                         let mut inner = scope.clone();
-                        self.check_block(&u.block, &mut inner);
+                        self.check_block(&u.block, &mut inner, structs);
                     }
                 },
                 Statement::IfCond(if_cond) => {
-                    self.check_expr(&if_cond.condition, scope);
+                    self.check_expr(&if_cond.condition, scope, structs);
                     let mut inner = scope.clone();
-                    self.check_block(&if_cond.block, &mut inner);
+                    self.check_block(&if_cond.block, &mut inner, structs);
                     if let Some(else_branch) = &if_cond.else_branch {
-                        self.check_else(else_branch, scope);
+                        self.check_else(else_branch, scope, structs);
                     }
                 }
                 Statement::Expr(expr, _) => {
-                    self.check_expr(expr, scope);
+                    self.check_expr(expr, scope, structs);
                 }
                 Statement::Error(_) => {}
             }
         }
     }
 
-    fn check_expr(&mut self, expr: &Expr, scope: &ScopeTracker) {
+    fn check_expr(&mut self, expr: &Expr, scope: &ScopeTracker, structs: &StructScope) {
         match expr {
             Expr::Identifier(ident) => match ident.kind {
                 IdentKind::Bare => {
@@ -756,15 +792,15 @@ impl<'a> ErrorChecker<'a> {
                     self.emit_diag(&UndefinedFunc::new(call.func.name, call.span()));
                 }
                 for arg in &call.args {
-                    self.check_expr(arg, scope);
+                    self.check_expr(arg, scope, structs);
                 }
             }
             Expr::BinaryExpr(bin) => {
-                self.check_expr(&bin.lhs, scope);
-                self.check_expr(&bin.rhs, scope);
+                self.check_expr(&bin.lhs, scope, structs);
+                self.check_expr(&bin.rhs, scope, structs);
             }
             Expr::UnaryExpr(unary) => {
-                self.check_expr(&unary.expr, scope);
+                self.check_expr(&unary.expr, scope, structs);
             }
             Expr::MapAccess(access) => {
                 if !access.map.name.is_empty()
@@ -781,25 +817,24 @@ impl<'a> ErrorChecker<'a> {
                     );
                 }
                 for key in &access.keys {
-                    self.check_expr(key, scope);
+                    self.check_expr(key, scope, structs);
                 }
             }
             Expr::Integer(_) | Expr::String(_) | Expr::ArgN(_) => {}
             Expr::Cast(cast) => {
-                self.check_expr(&cast.expr, scope);
+                self.check_expr(&cast.expr, scope, structs);
             }
             Expr::Tuple(tuple) => {
                 for element in &tuple.elements {
-                    self.check_expr(element, scope);
+                    self.check_expr(element, scope, structs);
                 }
             }
             Expr::Field(field) => {
-                self.check_expr(&field.base, scope);
+                self.check_expr(&field.base, scope, structs);
                 let Some(member) = &field.field else {
                     return;
                 };
-                let Some(base_type) =
-                    resolve_expr_type(&field.base, self.struct_defs, self.var_types)
+                let Some(base_type) = resolve_expr_type(&field.base, structs, self.var_types)
                 else {
                     // unresolved base type (e.g. tuple)
                     // skip for now, but should be implemented later
@@ -813,14 +848,16 @@ impl<'a> ErrorChecker<'a> {
                     );
                     return;
                 };
-                let Some(info) = self.struct_defs.get(name) else {
+                // skip errors on unknown args type without BTF info
+                let Some(info) = structs.get(name) else {
                     return;
                 };
                 let member_name = match member {
                     FieldMember::Name(ident) => ident.name,
                     FieldMember::Index(idx, _) => &idx.to_string(),
                 };
-                if !info.fields.iter().any(|decl| decl.name == member_name) {
+                let has_field = info.fields.iter().any(|decl| decl.name == member_name);
+                if !has_field {
                     self.push_span(
                         member.span(),
                         DiagnosticSeverity::ERROR,
@@ -872,19 +909,19 @@ impl<'a> ErrorChecker<'a> {
         }
     }
 
-    fn check_else(&mut self, else_branch: &Else, scope: &ScopeTracker) {
+    fn check_else(&mut self, else_branch: &Else, scope: &ScopeTracker, structs: &StructScope) {
         match else_branch {
             Else::IfCond(if_cond) => {
-                self.check_expr(&if_cond.condition, scope);
+                self.check_expr(&if_cond.condition, scope, structs);
                 let mut inner = scope.clone();
-                self.check_block(&if_cond.block, &mut inner);
+                self.check_block(&if_cond.block, &mut inner, structs);
                 if let Some(next_else) = &if_cond.else_branch {
-                    self.check_else(next_else, scope);
+                    self.check_else(next_else, scope, structs);
                 }
             }
             Else::Block(block) => {
                 let mut inner = scope.clone();
-                self.check_block(block, &mut inner);
+                self.check_block(block, &mut inner, structs);
             }
         }
     }
@@ -901,6 +938,7 @@ pub struct AnalyzedFile {
     pub document: Arc<Document>,
     pub struct_defs: HashMap<String, StructInfo>,
     pub var_types: HashMap<String, TypeInfo>,
+    pub btf_scopes: HashMap<String, Arc<BtfScope>>,
     diagnostics: Vec<Diagnostic>,
     ast_cell: OwnedAst,
 }
@@ -927,18 +965,50 @@ impl SemanticAnalyzer {
         let ast_cell = OwnedAst::new(source)?;
 
         let program = ast_cell.program();
-        let struct_defs = collect_structs(program);
-        let var_types = collect_var_types(program);
-        let diagnostics = compute_diagnostics(program, &line_index, &struct_defs, &var_types);
+        let mut struct_defs = collect_structs(program);
+        let btf_scopes = resolve_btf_scopes(context, program, &mut struct_defs);
+        let var_types = collect_var_types_with_btf(program, &struct_defs, &btf_scopes);
+        let diagnostics =
+            compute_diagnostics(program, &line_index, &struct_defs, &var_types, &btf_scopes);
 
         Ok(AnalyzedFile {
             document,
             ast_cell,
             struct_defs,
             var_types,
+            btf_scopes,
             diagnostics,
         })
     }
+}
+
+fn resolve_btf_scopes(
+    context: &Context,
+    program: &Program,
+    struct_defs: &mut HashMap<String, StructInfo>,
+) -> HashMap<String, Arc<BtfScope>> {
+    let mut scopes = HashMap::new();
+    for preamble in &program.preambles {
+        let Preamble::Probe(probe) = preamble else {
+            continue;
+        };
+        let Some(func) = btf::probe_func(&probe.attach_points) else {
+            continue;
+        };
+        if scopes.contains_key(func) {
+            continue;
+        }
+        let Some(scope) = context.btf.probe_scope(func) else {
+            continue;
+        };
+        for (name, info) in &scope.structs {
+            struct_defs
+                .entry(name.clone())
+                .or_insert_with(|| info.clone());
+        }
+        scopes.insert(func.to_string(), scope);
+    }
+    scopes
 }
 
 fn compute_diagnostics(
@@ -946,6 +1016,7 @@ fn compute_diagnostics(
     line_index: &OwnedLineIndex,
     struct_defs: &HashMap<String, StructInfo>,
     var_types: &HashMap<String, TypeInfo>,
+    btf_scopes: &HashMap<String, Arc<BtfScope>>,
 ) -> Vec<Diagnostic> {
     let global_maps = merge_vars(collect_global_maps(program));
     let defines = merge_vars(collect_defines(program));
@@ -957,6 +1028,7 @@ fn compute_diagnostics(
         macros: &macros,
         struct_defs,
         var_types,
+        btf_scopes,
         line_index,
         out: Vec::new(),
     }

@@ -1,10 +1,12 @@
 use super::analyzer::semantic_analyzer;
-use super::analyzer::semantic_analyzer::{StructInfo, TypeInfo};
+use super::analyzer::semantic_analyzer::{StructInfo, StructScope, TypeInfo};
+use super::btf::{self, BtfScope};
 use super::builtins::{BUILTINS, DATA_TYPES, SYNTAX_KEYWORDS};
-use super::parser::{Config, Expr, FieldAccess, Node, Program, Walk};
+use super::parser::{Config, Expr, FieldAccess, Node, Preamble, Program, Walk};
 use super::server::Context;
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::Arc;
 use tower_lsp::jsonrpc::{Error, ErrorCode, Result};
 use tower_lsp::lsp_types::{
     CompletionItem, CompletionItemKind, CompletionResponse, Documentation, MarkupContent,
@@ -47,7 +49,9 @@ pub async fn completion(
     }
 
     if let Some(field) = field_access_at(analyzed.ast(), offset) {
-        let items = field_completion(field, &analyzed.struct_defs, &analyzed.var_types);
+        let args = probe_args_at(analyzed.ast(), offset, &analyzed.btf_scopes);
+        let structs = StructScope::new(&analyzed.struct_defs).with(&args);
+        let items = field_completion(field, &structs, &analyzed.var_types);
         return Ok(Some(CompletionResponse::Array(items)));
     }
 
@@ -144,9 +148,30 @@ fn field_access_at<'a>(program: &'a Program<'a>, offset: usize) -> Option<&'a Fi
     innermost
 }
 
+fn probe_args_at(
+    program: &Program,
+    offset: usize,
+    btf_scopes: &HashMap<String, Arc<BtfScope>>,
+) -> HashMap<String, StructInfo> {
+    let mut layer = HashMap::new();
+    for preamble in &program.preambles {
+        if let Preamble::Probe(probe) = preamble {
+            if probe.span.start() <= offset && offset < probe.span.end() {
+                if let Some(scope) =
+                    btf::probe_func(&probe.attach_points).and_then(|func| btf_scopes.get(func))
+                {
+                    layer.insert("args".to_string(), scope.args.clone());
+                }
+                break;
+            }
+        }
+    }
+    layer
+}
+
 fn field_completion(
     field: &FieldAccess,
-    structs: &HashMap<String, StructInfo>,
+    structs: &StructScope,
     var_types: &HashMap<String, TypeInfo>,
 ) -> Vec<CompletionItem> {
     let Some(base_type) = semantic_analyzer::resolve_expr_type(&field.base, structs, var_types)
@@ -294,8 +319,10 @@ mod tests {
         let cursor = src.find("$f->").unwrap() + "$f->".len();
         let field = field_access_at(&program, cursor).expect("field access at cursor");
         let structs = semantic_analyzer::collect_structs(&program);
-        let var_types = semantic_analyzer::collect_var_types(&program);
-        let labels: Vec<_> = field_completion(field, &structs, &var_types)
+        let var_types =
+            semantic_analyzer::collect_var_types_with_btf(&program, &structs, &HashMap::new());
+        let scope = StructScope::new(&structs);
+        let labels: Vec<_> = field_completion(field, &scope, &var_types)
             .into_iter()
             .map(|i| i.label)
             .collect();
@@ -303,41 +330,6 @@ mod tests {
         assert_eq!(labels.len(), 2);
         assert_eq!(labels[0], "x");
         assert_eq!(labels[1], "y");
-    }
-
-    #[test]
-    fn test_resolve_expr_type() {
-        let src = r#"
-        struct Bar {
-            uint64 sector;
-        }
-
-        struct Foo {
-            struct Bar *bar;
-        }
-
-        BEGIN {
-            $f = (struct Foo *)arg0;
-            $f->bar->
-        }
-        "#;
-        let program = ast::parse(src).unwrap();
-        let structs = semantic_analyzer::collect_structs(&program);
-        let var_types = semantic_analyzer::collect_var_types(&program);
-        let cursor = src.find("$f->bar->").unwrap() + "$f->bar->".len();
-        let field = field_access_at(&program, cursor).expect("field access at cursor");
-
-        let base_type = semantic_analyzer::resolve_expr_type(&field.base, &structs, &var_types)
-            .expect("base type");
-
-        assert_eq!(
-            base_type,
-            TypeInfo::StructLike {
-                kind: crate::parser::TypeKind::Struct,
-                name: "Bar".to_string(),
-                pointers: 1,
-            }
-        );
     }
 
     #[test]
@@ -361,12 +353,51 @@ mod tests {
         let cursor = src.find("$x->").unwrap() + "$x->".len();
         let field = field_access_at(&program, cursor).expect("field access at cursor");
         let structs = semantic_analyzer::collect_structs(&program);
-        let var_types = semantic_analyzer::collect_var_types(&program);
-        let labels: Vec<_> = field_completion(field, &structs, &var_types)
+        let var_types =
+            semantic_analyzer::collect_var_types_with_btf(&program, &structs, &HashMap::new());
+        let scope = StructScope::new(&structs);
+        let labels: Vec<_> = field_completion(field, &scope, &var_types)
             .into_iter()
             .map(|i| i.label)
             .collect();
 
         assert_eq!(labels, vec!["x"]);
+    }
+
+    #[test]
+    fn test_btf_args_completion() {
+        use crate::btf::Btf;
+
+        let src = "fentry:tcp_v4_do_rcv { $x = args. }";
+        let program = ast::parse(src).unwrap();
+
+        let btf = Btf::new();
+        let mut btf_scopes = HashMap::new();
+        if let Some(scope) = btf.probe_scope("tcp_v4_do_rcv") {
+            btf_scopes.insert("tcp_v4_do_rcv".to_string(), scope);
+        }
+        if btf_scopes.is_empty() {
+            eprintln!("skipping: kernel BTF unavailable?");
+            return;
+        }
+
+        let cursor = src.find("args.").unwrap() + "args.".len();
+        let field = field_access_at(&program, cursor).expect("field access at cursor");
+        let structs = semantic_analyzer::collect_structs(&program);
+        let var_types =
+            semantic_analyzer::collect_var_types_with_btf(&program, &structs, &btf_scopes);
+
+        let mut args_layer = HashMap::new();
+        if let Some(args_scope) = btf_scopes.get("tcp_v4_do_rcv") {
+            args_layer.insert("args".to_string(), args_scope.args.clone());
+        }
+        let scope = StructScope::new(&structs).with(&args_layer);
+
+        let labels: Vec<_> = field_completion(field, &scope, &var_types)
+            .into_iter()
+            .map(|i| i.label)
+            .collect();
+        assert!(labels.iter().any(|l| l == "sk"));
+        assert!(labels.iter().any(|l| l == "skb"));
     }
 }

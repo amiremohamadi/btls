@@ -5,6 +5,7 @@ use std::sync::Arc;
 use tokio::sync::Mutex;
 
 use super::*;
+use crate::btf::Btf;
 use crate::client::*;
 use crate::server::*;
 use crate::storage::*;
@@ -18,6 +19,7 @@ fn init_context() -> Context {
         client,
         storage: Arc::new(Mutex::new(storage)),
         analyzer: Mutex::new(analyzer),
+        btf: Arc::new(Btf::new()),
     }
 }
 
@@ -53,6 +55,7 @@ async fn test_sanity() {
 
         fentry:napi_gro_receive {
             $len = args.skb->len;
+            print(args.invalid);
         }
 
         BEGIN {
@@ -78,11 +81,12 @@ async fn test_sanity() {
     let analyzed = analyzer.analyze(&context, path).await.unwrap();
 
     let errors = analyzed.diagnostics();
-    assert_eq!(errors.len(), 6);
+    assert_eq!(errors.len(), 7);
     assert_diag_msg!(errors[0], "Undefined Identifier");
     assert_diag_msg!(errors[1], "UNKNOWN_MACRO_IDENT");
-    assert_diag_msg!(errors[2], "Undefined Identifier");
+    assert_diag_msg!(errors[2], "\"args\" has no field \"invalid\"");
     assert_diag_msg!(errors[3], "Undefined Identifier");
-    assert_diag_msg!(errors[4], "Undefined function");
-    assert_diag_msg!(errors[5], "UNKNOWN");
+    assert_diag_msg!(errors[4], "Undefined Identifier");
+    assert_diag_msg!(errors[5], "Undefined function");
+    assert_diag_msg!(errors[6], "UNKNOWN");
 }
