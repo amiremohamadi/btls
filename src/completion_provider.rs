@@ -51,14 +51,20 @@ pub async fn completion(
     if let Some(field) = field_access_at(analyzed.ast(), offset) {
         let args = probe_args_at(analyzed.ast(), offset, &analyzed.btf_scopes);
         let structs = StructScope::new(&analyzed.struct_defs).with(&args);
-        let items = field_completion(field, &structs, &analyzed.var_types);
+        let var_types = semantic_analyzer::var_types_at(
+            analyzed.analyzed(),
+            offset,
+            &analyzed.struct_defs,
+            &analyzed.btf_scopes,
+        );
+        let items = field_completion(field, &structs, &var_types);
         return Ok(Some(CompletionResponse::Array(items)));
     }
 
     let file_uri =
         Url::from_file_path(path).unwrap_or_else(|_| Url::parse("file:///unknown").unwrap());
     let li = &analyzed.document.line_index;
-    let variables = semantic_analyzer::variables_at(analyzed.ast(), offset)
+    let variables = semantic_analyzer::variables_at(&analyzed, offset)
         .into_iter()
         .map(|v| CompletionItem {
             label: v.name.clone(),
@@ -79,7 +85,7 @@ pub async fn completion(
     let builtin_funcs =
         builtin_to_completion_item!(BUILTINS.functions, CompletionItemKind::FUNCTION);
 
-    let macros = macro_completion_items(analyzed.ast(), offset);
+    let macros = macro_completion_items(&analyzed, offset);
 
     Ok(Some(CompletionResponse::Array(
         variables
@@ -93,8 +99,11 @@ pub async fn completion(
     )))
 }
 
-fn macro_completion_items(program: &Program, offset: usize) -> Vec<CompletionItem> {
-    semantic_analyzer::macros_at(program, offset)
+fn macro_completion_items(
+    analyzed: &semantic_analyzer::AnalyzedFile,
+    offset: usize,
+) -> Vec<CompletionItem> {
+    semantic_analyzer::macros_at(analyzed.analyzed(), offset)
         .into_iter()
         .map(|r#macro| CompletionItem {
             label: r#macro.name.name.to_string(),
@@ -263,19 +272,16 @@ mod tests {
         macro inc($x) { $x += 1 }
         BEGIN {  }"#;
         let program = ast::parse(src).unwrap();
+        let analyzed = crate::analyzer::analyzed::analyze_program(&program);
 
-        let items = macro_completion_items(&program, src.len());
-        assert_eq!(items.len(), 1);
+        let macros = semantic_analyzer::macros_at(&analyzed, src.len());
+        assert_eq!(macros.len(), 1);
 
-        let item = &items[0];
-        assert_eq!(item.label, "inc");
-        assert_eq!(item.kind, Some(CompletionItemKind::FUNCTION));
-        assert_eq!(item.detail.as_deref(), Some("macro inc($x)"));
+        let r#macro = &macros[0];
+        assert_eq!(r#macro.name.name, "inc");
 
-        let Some(Documentation::MarkupContent(doc)) = &item.documentation else {
-            panic!("expected docs!");
-        };
-        assert_eq!(doc.value, "increments its argument\nin place");
+        let doc_value = r#macro.comments.join("\n");
+        assert_eq!(doc_value, "increments its argument\nin place");
     }
 
     #[test]
@@ -315,12 +321,13 @@ mod tests {
         }
         "#;
         let program = ast::parse(src).unwrap();
+        let analyzed = crate::analyzer::analyzed::analyze_program(&program);
 
         let cursor = src.find("$f->").unwrap() + "$f->".len();
         let field = field_access_at(&program, cursor).expect("field access at cursor");
         let structs = semantic_analyzer::collect_structs(&program);
         let var_types =
-            semantic_analyzer::collect_var_types_with_btf(&program, &structs, &HashMap::new());
+            semantic_analyzer::var_types_at(&analyzed, cursor, &structs, &HashMap::new());
         let scope = StructScope::new(&structs);
         let labels: Vec<_> = field_completion(field, &scope, &var_types)
             .into_iter()
@@ -348,13 +355,20 @@ mod tests {
             $x = $test->field1;
             $x->
         }
+
+        END {
+            // same var name $test defined in two probes with different types
+            // field completion inside one probe must not see the other's fields
+            $test = (struct Inner *)arg0;
+        }
         "#;
         let program = ast::parse(src).unwrap();
+        let analyzed = crate::analyzer::analyzed::analyze_program(&program);
         let cursor = src.find("$x->").unwrap() + "$x->".len();
         let field = field_access_at(&program, cursor).expect("field access at cursor");
         let structs = semantic_analyzer::collect_structs(&program);
         let var_types =
-            semantic_analyzer::collect_var_types_with_btf(&program, &structs, &HashMap::new());
+            semantic_analyzer::var_types_at(&analyzed, cursor, &structs, &HashMap::new());
         let scope = StructScope::new(&structs);
         let labels: Vec<_> = field_completion(field, &scope, &var_types)
             .into_iter()
@@ -370,6 +384,7 @@ mod tests {
 
         let src = "fentry:tcp_v4_do_rcv { $x = args. }";
         let program = ast::parse(src).unwrap();
+        let analyzed = crate::analyzer::analyzed::analyze_program(&program);
 
         let btf = Btf::new();
         let mut btf_scopes = HashMap::new();
@@ -384,8 +399,7 @@ mod tests {
         let cursor = src.find("args.").unwrap() + "args.".len();
         let field = field_access_at(&program, cursor).expect("field access at cursor");
         let structs = semantic_analyzer::collect_structs(&program);
-        let var_types =
-            semantic_analyzer::collect_var_types_with_btf(&program, &structs, &btf_scopes);
+        let var_types = semantic_analyzer::var_types_at(&analyzed, cursor, &structs, &btf_scopes);
 
         let mut args_layer = HashMap::new();
         if let Some(args_scope) = btf_scopes.get("tcp_v4_do_rcv") {

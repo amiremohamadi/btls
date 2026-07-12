@@ -28,7 +28,7 @@ pub async fn goto_definition(
         })));
     }
 
-    let Some(variable) = resolve_variable(analyzed.ast(), offset) else {
+    let Some(variable) = resolve_variable(&analyzed, offset) else {
         return Ok(None);
     };
     let Some(definition) = variable.locs.first() else {
@@ -60,7 +60,7 @@ pub async fn references(
         return Ok(None);
     };
 
-    let Some(variable) = resolve_variable(analyzed.ast(), offset) else {
+    let Some(variable) = resolve_variable(&analyzed, offset) else {
         return Ok(None);
     };
 
@@ -102,13 +102,13 @@ async fn analyze_document<'a>(context: &Context, path: &Path) -> Result<Analyzed
         .map_err(|_| Error::new(ErrorCode::InternalError))
 }
 
-fn resolve_variable<'a>(program: &'a Program<'a>, offset: usize) -> Option<VarInfo> {
-    let ident = identifier_at_offset(program, offset)?;
+fn resolve_variable<'a>(file: &'a AnalyzedFile, offset: usize) -> Option<VarInfo> {
+    let ident = identifier_at_offset(file.ast(), offset)?;
     if ident.kind == IdentKind::Bare {
         return None;
     }
 
-    semantic_analyzer::variables_at(program, offset)
+    semantic_analyzer::variables_at(file, offset)
         .into_iter()
         .find(|variable| variable.name == ident.prefixed_name())
 }
