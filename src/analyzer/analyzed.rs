@@ -120,6 +120,7 @@ impl<'a> AnalyzedPreamble<'a> {
 #[derive(Clone)]
 pub struct AnalyzedProgram<'a> {
     pub preambles: Vec<AnalyzedPreamble<'a>>,
+    #[allow(dead_code)]
     pub span: Span<'a>,
 }
 

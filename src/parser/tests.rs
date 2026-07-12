@@ -3,22 +3,22 @@
 use super::ast::parse;
 use super::*;
 
+fn has_errors(prog: &Program<'_>) -> bool {
+    prog.preambles
+        .iter()
+        .any(|p| matches!(p, Preamble::Error(_)))
+        || Walk::new(prog.as_node())
+            .any(|node| matches!(node.as_statement(), Some(Statement::Error(_))))
+}
+
 fn parse_no_errors(input: &str) {
     let prog = parse(input).unwrap();
-    let errors: Vec<_> = prog.errors().collect();
-    assert!(
-        errors.is_empty(),
-        "parse failed: {input:?} errors: {errors:?}"
-    );
+    assert!(!has_errors(&prog), "parse failed: {input:?}");
 }
 
 fn check_config(input: &str, expected: &[(&str, &str)]) {
     let prog = parse(input).unwrap();
-    let errors: Vec<_> = prog.errors().collect();
-    assert!(
-        errors.is_empty(),
-        "parse failed: {input:?} errors: {errors:?}"
-    );
+    assert!(!has_errors(&prog), "parse failed: {input:?}");
     assert_eq!(prog.preambles.len(), 1);
     let Preamble::Config(config) = &prog.preambles[0] else {
         panic!("not a config block!");
@@ -33,7 +33,7 @@ fn check_config(input: &str, expected: &[(&str, &str)]) {
 fn parse_has_errors(input: &str) {
     let prog = parse(input).unwrap();
     assert!(
-        prog.errors().next().is_some(),
+        has_errors(&prog),
         "expected a parse error but got none for {input:?}"
     );
 }
@@ -95,27 +95,15 @@ fn test_sanity() {
     // variable outside probe
     let prog = parse("$x = 1").unwrap();
     assert!(
-        prog.errors().collect::<Vec<_>>().len() > 0,
-        "parsed without any errors!"
-    );
-    assert!(
-        matches!(
-            prog.errors().next().unwrap(),
-            ErrorRef::Preamble(ErrorPreamble::UnknownPreamble(_))
-        ),
+        matches!(&prog.preambles[0], Preamble::Error(e) if matches!(**e, ErrorPreamble::UnknownPreamble(_))),
         "unexpected error type"
     );
 
     // unmatched brace
     let prog = parse("BEGIN { } }").unwrap();
     assert!(
-        prog.errors().collect::<Vec<_>>().len() > 0,
-        "parsed without any errors!"
-    );
-    assert!(
-        matches!(
-            prog.errors().next().unwrap(),
-            ErrorRef::Preamble(ErrorPreamble::UnmatchedBrace(_))
+        prog.preambles.iter().any(
+            |p| matches!(p, Preamble::Error(e) if matches!(**e, ErrorPreamble::UnmatchedBrace(_)))
         ),
         "unexpected error type"
     );
@@ -285,10 +273,10 @@ fn test_structs() {
     assert_eq!(def.fields.len(), 2);
     assert_eq!(def.fields[0].name.name, "x");
     assert_eq!(def.fields[0].type_name.text(), "int32");
-    assert!(def.fields[0].type_name.is_builtin());
+    assert!(matches!(def.fields[0].type_name.kind, TypeKind::Builtin));
     assert_eq!(def.fields[1].name.name, "name");
     assert_eq!(def.fields[1].type_name.text(), "uint64");
-    assert!(def.fields[1].type_name.is_builtin());
+    assert!(matches!(def.fields[1].type_name.kind, TypeKind::Builtin));
 }
 
 #[test]

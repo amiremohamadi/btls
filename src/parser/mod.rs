@@ -3,16 +3,11 @@ mod tests;
 
 use pest::Span;
 use std::fmt;
-use std::iter::FilterMap;
 
 pub trait Node<'a> {
     fn as_node(&self) -> &dyn Node<'a>;
     fn children(&self) -> Vec<&dyn Node<'a>>;
     fn span(&self) -> Span<'a>;
-
-    fn as_error<'b>(&'b self) -> Option<ErrorRef<'a, 'b>> {
-        None
-    }
 
     fn as_statement(&self) -> Option<&Statement<'a>> {
         None
@@ -24,10 +19,6 @@ pub trait Node<'a> {
 
     fn as_config(&self) -> Option<&Config<'a>> {
         None
-    }
-
-    fn errors<'b>(&'b self) -> FilterWalk<'a, 'b, ErrorRef<'a, 'b>> {
-        FilterWalk::new(self.as_node(), |node| node.as_error())
     }
 }
 
@@ -48,26 +39,6 @@ impl<'a, 'b> Iterator for Walk<'a, 'b> {
         let node = self.stack.pop()?;
         self.stack.extend(node.children().into_iter().rev());
         Some(node)
-    }
-}
-
-pub struct FilterWalk<'a, 'b, T> {
-    inner: FilterMap<Walk<'a, 'b>, fn(&'b dyn Node<'a>) -> Option<T>>,
-}
-
-impl<'a, 'b, T> FilterWalk<'a, 'b, T> {
-    pub fn new(node: &'b dyn Node<'a>, filter: fn(&'b dyn Node<'a>) -> Option<T>) -> Self {
-        FilterWalk {
-            inner: Walk::new(node).filter_map(filter),
-        }
-    }
-}
-
-impl<T> Iterator for FilterWalk<'_, '_, T> {
-    type Item = T;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.inner.next()
     }
 }
 
@@ -200,10 +171,6 @@ impl<'a> Node<'a> for ErrorStatement<'a> {
             Self::UndefinedFunc(e) => e.span(),
         }
     }
-
-    fn as_error<'b>(&'b self) -> Option<ErrorRef<'a, 'b>> {
-        Some(ErrorRef::Statement(self))
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -259,7 +226,6 @@ impl<'a> Node<'a> for Identifier<'a> {
 
 #[derive(Debug)]
 pub struct StringLiteral<'a> {
-    pub value: &'a str,
     pub span: Span<'a>,
 }
 
@@ -279,7 +245,6 @@ impl<'a> Node<'a> for StringLiteral<'a> {
 
 #[derive(Debug)]
 pub struct IntegerLiteral<'a> {
-    pub value: i64,
     pub span: Span<'a>,
 }
 
@@ -493,10 +458,6 @@ pub struct TypeName<'a> {
 }
 
 impl<'a> TypeName<'a> {
-    pub fn is_builtin(&self) -> bool {
-        self.kind == TypeKind::Builtin
-    }
-
     pub fn text(&self) -> &'a str {
         self.span.as_str().trim()
     }
@@ -574,7 +535,6 @@ impl<'a> Node<'a> for Tuple<'a> {
 
 #[derive(Debug)]
 pub struct ArgNExpr<'a> {
-    pub index: u64,
     pub span: Span<'a>,
 }
 
@@ -888,15 +848,6 @@ pub enum Statement<'a> {
     Expr(Box<Expr<'a>>, bool),
 }
 
-impl<'a> Statement<'a> {
-    pub fn has_semicolon(&self) -> bool {
-        match self {
-            Self::Assignment(_, b) | Self::Expr(_, b) => *b,
-            _ => true,
-        }
-    }
-}
-
 impl<'a> Node<'a> for Statement<'a> {
     fn as_node(&self) -> &dyn Node<'a> {
         self
@@ -1010,10 +961,6 @@ impl<'a> Node<'a> for ErrorPreamble<'a> {
             Self::UnknownPreamble(x) => x.span(),
             Self::UnmatchedBrace(x) => x.span(),
         }
-    }
-
-    fn as_error<'b>(&'b self) -> Option<ErrorRef<'a, 'b>> {
-        Some(ErrorRef::Preamble(self))
     }
 }
 
@@ -1179,7 +1126,6 @@ impl<'a> Node<'a> for FieldDecl<'a> {
 
 #[derive(Debug)]
 pub struct Include<'a> {
-    pub path: &'a str,
     pub span: Span<'a>,
 }
 
@@ -1200,7 +1146,6 @@ impl<'a> Node<'a> for Include<'a> {
 #[derive(Debug)]
 pub struct Define<'a> {
     pub name: Identifier<'a>,
-    pub body: Option<&'a str>,
     pub span: Span<'a>,
 }
 
@@ -1265,44 +1210,6 @@ impl<'a> Node<'a> for Program<'a> {
 pub struct Block<'a> {
     pub statements: Vec<Statement<'a>>,
     pub span: Span<'a>,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum ErrorRef<'a, 'b> {
-    Statement(&'b ErrorStatement<'a>),
-    Preamble(&'b ErrorPreamble<'a>),
-}
-
-impl<'a, 'b> ErrorRef<'a, 'b> {
-    pub fn diagnosis(&self) -> String {
-        match self {
-            Self::Statement(stmt) => stmt.diagnosis(),
-            Self::Preamble(pream) => pream.diagnosis(),
-        }
-    }
-}
-
-impl<'a, 'b> Node<'a> for ErrorRef<'a, 'b> {
-    fn as_node(&self) -> &'b dyn Node<'a> {
-        match self {
-            Self::Statement(stmt) => stmt.as_node(),
-            Self::Preamble(pream) => pream.as_node(),
-        }
-    }
-
-    fn children(&self) -> Vec<&'b dyn Node<'a>> {
-        match self {
-            Self::Statement(stmt) => stmt.children(),
-            Self::Preamble(pream) => pream.children(),
-        }
-    }
-
-    fn span(&self) -> Span<'a> {
-        match self {
-            Self::Statement(stmt) => stmt.span(),
-            Self::Preamble(pream) => pream.span(),
-        }
-    }
 }
 
 impl<'a> Node<'a> for Block<'a> {
