@@ -391,10 +391,6 @@ mod tests {
         if let Some(scope) = btf.probe_scope("tcp_v4_do_rcv") {
             btf_scopes.insert("tcp_v4_do_rcv".to_string(), scope);
         }
-        if btf_scopes.is_empty() {
-            eprintln!("skipping: kernel BTF unavailable?");
-            return;
-        }
 
         let cursor = src.find("args.").unwrap() + "args.".len();
         let field = field_access_at(&program, cursor).expect("field access at cursor");

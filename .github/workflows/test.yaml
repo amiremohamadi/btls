@@ -34,3 +34,5 @@ jobs:
 
     - name: Run unit tests
       run: cargo test --verbose
+      env:
+        BTF_VMLINUX_PATH: tests/data/vmlinux

@@ -48,7 +48,11 @@ impl Btf {
 
     fn load(&self) -> Option<&btf_rs::Btf> {
         self.inner
-            .get_or_init(|| btf_rs::Btf::from_file(VMLINUX).ok())
+            .get_or_init(|| {
+                let path =
+                    std::env::var("BTF_VMLINUX_PATH").unwrap_or_else(|_| VMLINUX.to_string());
+                btf_rs::Btf::from_file(path).ok()
+            })
             .as_ref()
     }
 
