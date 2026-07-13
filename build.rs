@@ -4,7 +4,7 @@ fn main() {
     assert!(
         Command::new("/usr/bin/env")
             .arg("python")
-            .arg("./scripts/generate.py")
+            .arg("./scripts/generate_builtins.py")
             .output()
             .unwrap()
             .status
