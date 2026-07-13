@@ -671,6 +671,14 @@ pub enum AssignOp {
     Assign,
     AddAssign,
     SubAssign,
+    MulAssign,
+    DivAssign,
+    ModAssign,
+    BitAndAssign,
+    BitOrAssign,
+    BitXorAssign,
+    ShlAssign,
+    ShrAssign,
 }
 
 #[derive(Debug)]

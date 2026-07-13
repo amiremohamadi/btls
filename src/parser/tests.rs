@@ -51,6 +51,7 @@ fn test_sanity() {
     parse_no_errors("END, BEGIN { $x  = 1   ; }");
     parse_no_errors("END, BEGIN / 1 / {}");
     parse_no_errors("BEGIN { $x = 1 + 2 - 3 * 4; }");
+    parse_no_errors("BEGIN { $x = 1 & 2 | 3 ^ 4 << 5 >> 6; }");
     parse_no_errors("BEGIN { $x = 1 + 2 - 3 * func($y, $z); }");
     parse_no_errors("BEGIN { if ($x == 1) {} }");
     parse_no_errors("BEGIN { if ($x == 1) { return; } }");

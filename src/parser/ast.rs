@@ -260,6 +260,14 @@ fn convert_assign_op(pair: Pair<Rule>) -> AssignOp {
         "=" => AssignOp::Assign,
         "+=" => AssignOp::AddAssign,
         "-=" => AssignOp::SubAssign,
+        "*=" => AssignOp::MulAssign,
+        "/=" => AssignOp::DivAssign,
+        "%=" => AssignOp::ModAssign,
+        "&=" => AssignOp::BitAndAssign,
+        "|=" => AssignOp::BitOrAssign,
+        "^=" => AssignOp::BitXorAssign,
+        "<<=" => AssignOp::ShlAssign,
+        ">>=" => AssignOp::ShrAssign,
         _ => unreachable!(),
     }
 }
@@ -365,15 +373,18 @@ fn convert_expr(pair: Pair<Rule>) -> Expr {
 
     let parser = PrattParser::new()
         .op(Op::infix(Rule::and, Assoc::Left) | Op::infix(Rule::or, Assoc::Left))
+        .op(Op::infix(Rule::band, Assoc::Left)
+            | Op::infix(Rule::bor, Assoc::Left)
+            | Op::infix(Rule::bxor, Assoc::Left))
         .op(Op::infix(Rule::ge, Assoc::Left)
             | Op::infix(Rule::gt, Assoc::Left)
             | Op::infix(Rule::le, Assoc::Left)
             | Op::infix(Rule::lt, Assoc::Left)
             | Op::infix(Rule::eq, Assoc::Left)
             | Op::infix(Rule::ne, Assoc::Left))
-        .op(Op::infix(Rule::add, Assoc::Left)
-            | Op::infix(Rule::sub, Assoc::Left)
-            | Op::infix(Rule::mul, Assoc::Left)
+        .op(Op::infix(Rule::shl, Assoc::Left) | Op::infix(Rule::shr, Assoc::Left))
+        .op(Op::infix(Rule::add, Assoc::Left) | Op::infix(Rule::sub, Assoc::Left))
+        .op(Op::infix(Rule::mul, Assoc::Left)
             | Op::infix(Rule::div, Assoc::Left)
             | Op::infix(Rule::r#mod, Assoc::Left))
         .op(Op::prefix(Rule::not)
