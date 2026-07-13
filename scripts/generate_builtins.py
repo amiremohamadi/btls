@@ -5,9 +5,11 @@ import subprocess
 import mistune
 from mistune.plugins import plugin_table
 
+BPFTRACE_COMMIT = 'efb8d0d8876295f77170ec9a3c65101d8749f8db'
 
-def _get_bpftrace_stdlib_docs():
-    url = 'https://raw.githubusercontent.com/bpftrace/bpftrace/efb8d0d8876295f77170ec9a3c65101d8749f8db/docs/stdlib.md'
+
+def _get_bpftrace_docs(doc):
+    url = f'https://raw.githubusercontent.com/bpftrace/bpftrace/{BPFTRACE_COMMIT}/docs/{doc}.md'
     r = subprocess.run(['curl', '-sSl', url], capture_output=True, text=True)
     return r.stdout
 
@@ -72,12 +74,6 @@ def export_symbols(field, symbols, target):
     for sym in symbols:
         export_symbol(sym, target)
     print('\t],', file=target)
-
-
-def _get_bpftrace_language_docs():
-    url = 'https://raw.githubusercontent.com/bpftrace/bpftrace/efb8d0d8876295f77170ec9a3c65101d8749f8db/docs/language.md'
-    r = subprocess.run(['curl', '-sSl', url], capture_output=True, text=True)
-    return r.stdout
 
 
 def _parse_config_vars(content):
@@ -158,14 +154,14 @@ def export_config_vars(field, vars, target):
 
 
 def generate_builtins():
-    content = _get_bpftrace_stdlib_docs()
+    content = _get_bpftrace_docs('stdlib')
     markdown = mistune.create_markdown(renderer=mistune.AstRenderer(),
                                        plugins=[plugin_table])
     ast = markdown(content)
     builtin_vars = _parse_vars_table(ast)
     builtin_funcs = _parse_functions_docs(content)
 
-    lang_content = _get_bpftrace_language_docs()
+    lang_content = _get_bpftrace_docs('language')
     config_vars = _parse_config_vars(lang_content)
 
     with open('./target/builtins.gen.rs', 'w') as target:
