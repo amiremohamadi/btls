@@ -75,6 +75,8 @@ fn test_sanity() {
     parse_no_errors("BEGIN { @map[1]++; }");
     parse_no_errors("BEGIN { ++@map[1]; }");
     parse_no_errors("BEGIN { @map[@n] = $x; }");
+    parse_no_errors("BEGIN { $x = 0xFF_FF; $y = 1_000_000; $z = 2e3; }");
+
     parse_no_errors("macro one() { 1 }");
     parse_no_errors("macro add_one(x) { x + 1 }");
     parse_no_errors("macro add_one_to_each($a, @b) { $a += 1; @b += 1; }");

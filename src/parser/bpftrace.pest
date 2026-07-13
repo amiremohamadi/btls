@@ -10,7 +10,10 @@ block_comment_content = @{ (!"*/" ~ ANY)* }
 
 identifier = @{ ("_" | ASCII_ALPHA) ~ ("_" | ASCII_ALPHANUMERIC)* }
 string     = @{ "\"" ~ (!"\"" ~ ANY)* ~ "\"" }
-number     = @{ ASCII_DIGIT+ }
+number     = @{ (hex | sci | dec) ~ ("u" | "U" | "l" | "L")* }
+dec        = @{ ASCII_DIGIT+ ~ ("_" ~ ASCII_DIGIT+)* }
+hex        =  { "0" ~ ("x" | "X") ~ (ASCII_HEX_DIGIT | "_")+ }
+sci        =  { dec ~ ("e" | "E") ~ ("+")? ~ dec }
 
 struct_kw = { "struct" | "union" }
 ptr       = { "*" }
