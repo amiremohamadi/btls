@@ -14,12 +14,6 @@ pub enum DocumentVersion {
     IoError,
 }
 
-impl DocumentVersion {
-    pub fn is_error(self) -> bool {
-        matches!(self, DocumentVersion::IoError)
-    }
-}
-
 #[derive(Debug)]
 pub struct Document {
     pub path: PathBuf,
@@ -96,13 +90,5 @@ impl Storage {
                 DocumentVersion::InMemory { revision },
             )),
         );
-    }
-
-    pub fn unload(&mut self, path: &Path) {
-        self.memory_docs.remove(path);
-    }
-
-    pub fn memory_docs(&self) -> Vec<Arc<Document>> {
-        self.memory_docs.values().cloned().collect()
     }
 }

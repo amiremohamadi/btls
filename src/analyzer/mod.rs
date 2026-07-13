@@ -1,3 +1,4 @@
+pub mod analyzed;
 pub mod semantic_analyzer;
 mod tests;
 
@@ -27,6 +28,31 @@ impl OwnedAst {
     }
 
     pub fn program(&self) -> &Program<'_> {
+        self.0.borrow_dependent()
+    }
+}
+
+use analyzed::AnalyzedProgram;
+
+self_cell!(
+    struct AnalyzedProgramCell {
+        owner: OwnedAst,
+        #[covariant]
+        dependent: AnalyzedProgram,
+    }
+);
+
+#[derive(Clone)]
+pub struct OwnedAnalyzedProgram(Arc<AnalyzedProgramCell>);
+
+impl OwnedAnalyzedProgram {
+    pub fn new(ast: OwnedAst) -> Self {
+        Self(Arc::new(AnalyzedProgramCell::new(ast, |ast| {
+            analyzed::analyze_program(ast.program())
+        })))
+    }
+
+    pub fn get(&self) -> &AnalyzedProgram<'_> {
         self.0.borrow_dependent()
     }
 }

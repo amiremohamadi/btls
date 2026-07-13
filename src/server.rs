@@ -1,4 +1,6 @@
-use super::{analyzer::semantic_analyzer::SemanticAnalyzer, client::Client, storage::Storage};
+use super::{
+    analyzer::semantic_analyzer::SemanticAnalyzer, btf::Btf, client::Client, storage::Storage,
+};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tower_lsp::{
@@ -20,6 +22,7 @@ pub struct Context {
     pub client: Client,
     pub storage: Arc<Mutex<Storage>>,
     pub analyzer: Mutex<SemanticAnalyzer>,
+    pub btf: Arc<Btf>,
 }
 
 #[tower_lsp::async_trait]
@@ -138,6 +141,7 @@ pub async fn run() {
             client,
             storage,
             analyzer: tokio::sync::Mutex::new(analyzer),
+            btf: Arc::new(Btf::new()),
         };
         Backend { context }
     });

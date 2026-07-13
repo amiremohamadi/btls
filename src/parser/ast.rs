@@ -10,9 +10,9 @@ use super::{
     ArgNExpr, AssignOp, Assignment, BinaryExpr, Block, CDef, Call, CastExpr, Config,
     ConfigAssignment, Define, Else, ErrorPreamble, ErrorStatement, Expr, FieldAccess, FieldDecl,
     FieldMember, For, IdentKind, Identifier, If, Include, IntegerLiteral, Loop, Lvalue,
-    MacroDefinition, MacroParam, MacroParamKind, MapAccess, Node, Preamble, Probe, Program,
-    Statement, StringLiteral, StructDef, Tuple, TypeKind, TypeName, UnaryExpr, UnaryOp,
-    UnknownPreamble, UnknownStatement, UnmatchedBrace, Unroll, While,
+    MacroDefinition, MacroParam, MapAccess, Node, Preamble, Probe, Program, Statement,
+    StringLiteral, StructDef, Tuple, TypeKind, TypeName, UnaryExpr, UnaryOp, UnknownPreamble,
+    UnknownStatement, UnmatchedBrace, Unroll, While,
 };
 
 #[derive(pest_derive::Parser)]
@@ -22,7 +22,6 @@ struct BPFTraceParser;
 fn convert_int(pair: Pair<Rule>) -> IntegerLiteral {
     assert!(matches!(pair.as_rule(), Rule::number));
     IntegerLiteral {
-        value: pair.as_str().parse().unwrap(),
         span: pair.as_span(),
     }
 }
@@ -30,10 +29,7 @@ fn convert_int(pair: Pair<Rule>) -> IntegerLiteral {
 fn convert_str(pair: Pair<Rule>) -> StringLiteral {
     assert!(matches!(pair.as_rule(), Rule::string));
     let span = pair.as_span();
-    StringLiteral {
-        value: pair.as_str(),
-        span,
-    }
+    StringLiteral { span }
 }
 
 fn convert_ident(pair: Pair<Rule>) -> Identifier {
@@ -131,7 +127,7 @@ fn convert_macro_def<'a>(pair: Pair<'a, Rule>, comments: Vec<&'a str>) -> MacroD
     }
 }
 
-fn convert_comment(pair: Pair<Rule>) -> &str {
+fn convert_comment(pair: Pair<'_, Rule>) -> &str {
     assert!(matches!(pair.as_rule(), Rule::comment));
     pair.into_inner()
         .next()
@@ -155,13 +151,6 @@ fn convert_var_to_expr(pair: Pair<Rule>) -> Expr {
         Rule::map_var => convert_map_var_to_expr(inner, span),
         _ => unreachable!(),
     }
-}
-
-fn convert_map_var<'a>(pair: Pair<'a, Rule>) -> Identifier<'a> {
-    assert!(matches!(pair.as_rule(), Rule::map_var));
-    let mut ident = convert_ident(pair.into_inner().exactly_one().unwrap());
-    ident.kind = IdentKind::Map;
-    ident
 }
 
 fn convert_map_var_to_expr<'a>(pair: Pair<'a, Rule>, span: Span<'a>) -> Expr<'a> {
@@ -355,8 +344,7 @@ fn convert_type_name(pair: Pair<Rule>) -> TypeName {
 
 fn convert_arg_n(pair: Pair<Rule>) -> ArgNExpr {
     let span = pair.as_span();
-    let index = pair.as_str().trim_start_matches("arg").parse().unwrap();
-    ArgNExpr { index, span }
+    ArgNExpr { span }
 }
 
 fn convert_unary_op(op: &Pair<Rule>) -> UnaryOp {
@@ -590,7 +578,7 @@ fn convert_block(pair: Pair<Rule>) -> Block {
     Block { statements, span }
 }
 
-fn convert_attach_points(pair: Pair<Rule>) -> Vec<&str> {
+fn convert_attach_points(pair: Pair<'_, Rule>) -> Vec<&str> {
     assert!(matches!(pair.as_rule(), Rule::attach_point_list));
     let mut pairs = pair.into_inner();
     let Some(first) = pairs.next() else {
@@ -635,11 +623,7 @@ fn convert_probe(pair: Pair<Rule>) -> Probe {
 fn convert_include(pair: Pair<Rule>) -> Include {
     assert!(matches!(pair.as_rule(), Rule::include));
     let span = pair.as_span();
-    let path = pair.into_inner().exactly_one().unwrap();
-    Include {
-        path: path.as_str(),
-        span,
-    }
+    Include { span }
 }
 
 fn convert_define(pair: Pair<Rule>) -> Define {
@@ -653,8 +637,7 @@ fn convert_define(pair: Pair<Rule>) -> Define {
         span: name_pair.as_span(),
         kind: IdentKind::Bare,
     };
-    let body = pairs.next().map(|p| p.as_str());
-    Define { name, body, span }
+    Define { name, span }
 }
 
 fn convert_cdef(pair: Pair<Rule>) -> CDef {
@@ -766,7 +749,7 @@ fn convert_prog(pair: Pair<Rule>) -> Program {
     Program { preambles, span }
 }
 
-pub fn parse(input: &str) -> Result<Program> {
+pub fn parse(input: &str) -> Result<Program<'_>> {
     let pair = BPFTraceParser::parse(Rule::program, input)?
         .exactly_one()
         .map_err(|_| anyhow::anyhow!("failed to consume"))?;
