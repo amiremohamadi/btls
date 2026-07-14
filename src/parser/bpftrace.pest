@@ -122,7 +122,7 @@ include_path = @{ "<" ~ (!(">" | NEWLINE) ~ ANY)* ~ ">" }
 define       = ${ "#define" ~ SPACE+ ~ identifier ~ (SPACE+ ~ define_body)? }
 define_body  = @{ (!NEWLINE ~ ANY)+ }
 struct_def   =  { struct_kw ~ identifier ~ "{" ~ (field_decl | comment | error)* ~ "}" ~ ";"? }
-field_decl   =  { type_name ~ identifier ~ array_suffix? ~ ";" }
+field_decl   =  { type_name ~ identifier ~ array_suffix? ~ ";"? }
 array_suffix =  { "[" ~ number ~ "]" }
 
 cfg_value  = { identifier | number | string }

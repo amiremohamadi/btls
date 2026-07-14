@@ -238,8 +238,8 @@ pub fn collect_structs(program: &Program) -> HashMap<String, StructInfo> {
                     fields: def
                         .fields
                         .iter()
-                        .filter(|f| f.type_name.validate(&structs))
-                        .map(|f| FieldInfo {
+                        .filter(|(f, _)| f.type_name.validate(&structs))
+                        .map(|(f, _)| FieldInfo {
                             name: f.name.name.to_string(),
                             type_name: TypeInfo::from(&f.type_name),
                         })
@@ -560,19 +560,26 @@ impl<'a> ErrorChecker<'a> {
         for preamble in &analyzed.preambles {
             match preamble {
                 AnalyzedPreamble::Probe(probe, block) => self.check_probe(probe, block),
-                AnalyzedPreamble::CDef(cdef) => {
-                    if let CDef::Struct(def) = cdef {
-                        for field in &def.fields {
-                            if !field.type_name.validate(self.struct_defs) {
-                                self.push_span(
-                                    field.span,
-                                    DiagnosticSeverity::ERROR,
-                                    format!(
-                                        "Unsupported field type \"{}\"",
-                                        field.type_name.text()
-                                    ),
-                                );
-                            }
+                AnalyzedPreamble::CDef(_) => {}
+                AnalyzedPreamble::AnalyzedStruct(def) => {
+                    let mut fields = def.fields.iter().peekable();
+                    while let Some(field) = fields.next() {
+                        if fields.peek().is_some() && !field.has_semicolon() {
+                            self.push_span(
+                                field.field.span,
+                                DiagnosticSeverity::ERROR,
+                                "Expected ';' after field declaration".to_string(),
+                            );
+                        }
+                        if !field.field.type_name.validate(self.struct_defs) {
+                            self.push_span(
+                                field.field.span,
+                                DiagnosticSeverity::ERROR,
+                                format!(
+                                    "Unsupported field type \"{}\"",
+                                    field.field.type_name.text()
+                                ),
+                            );
                         }
                     }
                 }

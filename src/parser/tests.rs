@@ -259,7 +259,7 @@ fn test_loops() {
 
 #[test]
 fn test_structs() {
-    parse_no_errors("struct Foo { int32 x; uint64 name; }");
+    parse_no_errors("struct Foo { int32 x; uint64 name }");
     parse_no_errors("struct Foo { int32 x; };");
     parse_no_errors("union U { int32 a; uint64 b; }");
     parse_no_errors("struct Nested { struct Foo *next; uint64 flags; }");
@@ -274,12 +274,12 @@ fn test_structs() {
     };
     assert_eq!(def.name.name, "Foo");
     assert_eq!(def.fields.len(), 2);
-    assert_eq!(def.fields[0].name.name, "x");
-    assert_eq!(def.fields[0].type_name.text(), "int32");
-    assert!(matches!(def.fields[0].type_name.kind, TypeKind::Builtin));
-    assert_eq!(def.fields[1].name.name, "name");
-    assert_eq!(def.fields[1].type_name.text(), "uint64");
-    assert!(matches!(def.fields[1].type_name.kind, TypeKind::Builtin));
+    assert_eq!(def.fields[0].0.name.name, "x");
+    assert_eq!(def.fields[0].0.type_name.text(), "int32");
+    assert!(matches!(def.fields[0].0.type_name.kind, TypeKind::Builtin));
+    assert_eq!(def.fields[1].0.name.name, "name");
+    assert_eq!(def.fields[1].0.type_name.text(), "uint64");
+    assert!(matches!(def.fields[1].0.type_name.kind, TypeKind::Builtin));
 }
 
 #[test]

@@ -1091,7 +1091,7 @@ impl<'a> Node<'a> for CDef<'a> {
 #[derive(Debug)]
 pub struct StructDef<'a> {
     pub name: Identifier<'a>,
-    pub fields: Vec<FieldDecl<'a>>,
+    pub fields: Vec<(FieldDecl<'a>, bool)>,
     pub span: Span<'a>,
 }
 
@@ -1102,7 +1102,7 @@ impl<'a> Node<'a> for StructDef<'a> {
 
     fn children(&self) -> Vec<&dyn Node<'a>> {
         let mut children: Vec<&dyn Node<'a>> = vec![self.name.as_node()];
-        children.extend(self.fields.iter().map(|f| f.as_node()));
+        children.extend(self.fields.iter().map(|(f, _)| f.as_node()));
         children
     }
 

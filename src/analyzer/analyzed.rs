@@ -1,8 +1,8 @@
 use pest::Span;
 
 use crate::parser::{
-    Assignment, Block, CDef, Config, Else, ErrorPreamble, ErrorStatement, Expr, Identifier, If,
-    Loop, MacroDefinition, Node, Preamble, Probe, Program, Statement,
+    Assignment, Block, CDef, Config, Else, ErrorPreamble, ErrorStatement, Expr, FieldDecl,
+    Identifier, If, Loop, MacroDefinition, Node, Preamble, Probe, Program, Statement,
 };
 
 #[derive(Clone)]
@@ -97,10 +97,29 @@ pub struct AnalyzedExprStmt<'a> {
 }
 
 #[derive(Clone)]
+pub struct AnalyzedFieldDecl<'a> {
+    pub field: &'a FieldDecl<'a>,
+    pub has_semicolon: bool,
+}
+
+impl<'a> AnalyzedFieldDecl<'a> {
+    pub fn has_semicolon(&self) -> bool {
+        self.has_semicolon
+    }
+}
+
+#[derive(Clone)]
+pub struct AnalyzedStructDef<'a> {
+    pub fields: Vec<AnalyzedFieldDecl<'a>>,
+    pub span: pest::Span<'a>,
+}
+
+#[derive(Clone)]
 pub enum AnalyzedPreamble<'a> {
     Probe(&'a Probe<'a>, AnalyzedBlock<'a>),
     Macro(&'a MacroDefinition<'a>, AnalyzedBlock<'a>),
     CDef(&'a CDef<'a>),
+    AnalyzedStruct(AnalyzedStructDef<'a>),
     Config(&'a Config<'a>),
     Error(&'a ErrorPreamble<'a>),
 }
@@ -111,6 +130,7 @@ impl<'a> AnalyzedPreamble<'a> {
             Self::Probe(p, _) => p.span(),
             Self::Macro(m, _) => m.span(),
             Self::CDef(c) => c.span(),
+            Self::AnalyzedStruct(s) => s.span,
             Self::Config(c) => c.span(),
             Self::Error(e) => e.span(),
         }
@@ -135,7 +155,23 @@ fn analyze_preamble<'a>(preamble: &'a Preamble<'a>) -> AnalyzedPreamble<'a> {
     match preamble {
         Preamble::Probe(probe) => AnalyzedPreamble::Probe(probe, analyze_block(&probe.block)),
         Preamble::Macro(m) => AnalyzedPreamble::Macro(m.as_ref(), analyze_block(&m.body)),
-        Preamble::CDef(c) => AnalyzedPreamble::CDef(c.as_ref()),
+        Preamble::CDef(cdef) => match cdef.as_ref() {
+            CDef::Struct(def) => {
+                let fields: Vec<AnalyzedFieldDecl> = def
+                    .fields
+                    .iter()
+                    .map(|(f, has_semicolon)| AnalyzedFieldDecl {
+                        field: f,
+                        has_semicolon: *has_semicolon,
+                    })
+                    .collect();
+                AnalyzedPreamble::AnalyzedStruct(AnalyzedStructDef {
+                    fields,
+                    span: def.span,
+                })
+            }
+            _ => AnalyzedPreamble::CDef(cdef.as_ref()),
+        },
         Preamble::Config(c) => AnalyzedPreamble::Config(c.as_ref()),
         Preamble::Error(e) => AnalyzedPreamble::Error(e.as_ref()),
     }

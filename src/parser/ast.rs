@@ -674,7 +674,10 @@ fn convert_struct_def(pair: Pair<Rule>) -> StructDef {
         .unwrap();
     let fields = pairs
         .filter(|p| matches!(p.as_rule(), Rule::field_decl))
-        .map(convert_field_decl)
+        .map(|pair| {
+            let has_semi = pair.as_str().trim_end().ends_with(';');
+            (convert_field_decl(pair), has_semi)
+        })
         .collect();
 
     StructDef { name, fields, span }
