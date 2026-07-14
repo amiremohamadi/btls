@@ -2,7 +2,7 @@ use super::analyzer::semantic_analyzer;
 use super::analyzer::semantic_analyzer::{StructInfo, StructScope, TypeInfo};
 use super::btf::{self, BtfScope};
 use super::builtins::{BUILTINS, DATA_TYPES, SYNTAX_KEYWORDS};
-use super::parser::{Config, Expr, FieldAccess, Node, Preamble, Program, Walk};
+use super::parser::{ActionBlock, Config, Expr, FieldAccess, Node, Program, Walk};
 use super::server::Context;
 use std::collections::HashMap;
 use std::path::Path;
@@ -163,8 +163,8 @@ fn probe_args_at(
     btf_scopes: &HashMap<String, Arc<BtfScope>>,
 ) -> HashMap<String, StructInfo> {
     let mut layer = HashMap::new();
-    for preamble in &program.preambles {
-        if let Preamble::Probe(probe) = preamble {
+    for action_block in &program.action_blocks {
+        if let ActionBlock::Probe(probe) = action_block {
             if probe.span.start() <= offset && offset < probe.span.end() {
                 if let Some(scope) =
                     btf::probe_func(&probe.attach_points).and_then(|func| btf_scopes.get(func))
@@ -289,7 +289,7 @@ mod tests {
         let src = "config = {\n stack_mode =  }";
         let program = ast::parse(src).unwrap();
 
-        let parser::Preamble::Config(c) = &program.preambles[0] else {
+        let parser::ActionBlock::Config(c) = &program.action_blocks[0] else {
             panic!("not a config block");
         };
 

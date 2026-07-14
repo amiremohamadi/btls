@@ -4,9 +4,9 @@ use super::ast::parse;
 use super::*;
 
 fn has_errors(prog: &Program<'_>) -> bool {
-    prog.preambles
+    prog.action_blocks
         .iter()
-        .any(|p| matches!(p, Preamble::Error(_)))
+        .any(|p| matches!(p, ActionBlock::Error(_)))
         || Walk::new(prog.as_node())
             .any(|node| matches!(node.as_statement(), Some(Statement::Error(_))))
 }
@@ -19,8 +19,8 @@ fn parse_no_errors(input: &str) {
 fn check_config(input: &str, expected: &[(&str, &str)]) {
     let prog = parse(input).unwrap();
     assert!(!has_errors(&prog), "parse failed: {input:?}");
-    assert_eq!(prog.preambles.len(), 1);
-    let Preamble::Config(config) = &prog.preambles[0] else {
+    assert_eq!(prog.action_blocks.len(), 1);
+    let ActionBlock::Config(config) = &prog.action_blocks[0] else {
         panic!("not a config block!");
     };
     assert_eq!(config.assignments.len(), expected.len());
@@ -98,15 +98,15 @@ fn test_sanity() {
     // variable outside probe
     let prog = parse("$x = 1").unwrap();
     assert!(
-        matches!(&prog.preambles[0], Preamble::Error(e) if matches!(**e, ErrorPreamble::UnknownPreamble(_))),
+        matches!(&prog.action_blocks[0], ActionBlock::Error(e) if matches!(**e, ErrorActionBlock::UnknownActionBlock(_))),
         "unexpected error type"
     );
 
     // unmatched brace
     let prog = parse("BEGIN { } }").unwrap();
     assert!(
-        prog.preambles.iter().any(
-            |p| matches!(p, Preamble::Error(e) if matches!(**e, ErrorPreamble::UnmatchedBrace(_)))
+        prog.action_blocks.iter().any(
+            |p| matches!(p, ActionBlock::Error(e) if matches!(**e, ErrorActionBlock::UnmatchedBrace(_)))
         ),
         "unexpected error type"
     );
@@ -136,9 +136,9 @@ fn test_sanity() {
 #[test]
 fn test_probe() {
     let prog = parse("tracepoint:sched:* { }").unwrap();
-    assert_eq!(prog.preambles.len(), 1);
+    assert_eq!(prog.action_blocks.len(), 1);
 
-    let Preamble::Probe(probe) = &prog.preambles[0] else {
+    let ActionBlock::Probe(probe) = &prog.action_blocks[0] else {
         panic!("not a probe!");
     };
     assert_eq!(probe.attach_points[0], "tracepoint:sched:*");
@@ -158,7 +158,7 @@ fn test_statements() {
     }"#,
     )
     .unwrap();
-    let Preamble::Probe(probe) = &prog.preambles[0] else {
+    let ActionBlock::Probe(probe) = &prog.action_blocks[0] else {
         panic!("not a probe!");
     };
     assert_eq!(probe.block.statements.len(), 6);
@@ -181,7 +181,7 @@ fn test_calls() {
     }"#,
     )
     .unwrap();
-    let Preamble::Probe(probe) = &prog.preambles[0] else {
+    let ActionBlock::Probe(probe) = &prog.action_blocks[0] else {
         panic!("not a probe!");
     };
     assert_eq!(probe.block.statements.len(), 6);
@@ -209,9 +209,9 @@ fn test_macros() {
     )
     .unwrap();
 
-    assert_eq!(prog.preambles.len(), 2);
+    assert_eq!(prog.action_blocks.len(), 2);
 
-    let Preamble::Macro(r#macro) = &prog.preambles[0] else {
+    let ActionBlock::Macro(r#macro) = &prog.action_blocks[0] else {
         panic!("not a macro!");
     };
     assert_eq!(r#macro.name.name, "add_one_to_each");
@@ -221,7 +221,7 @@ fn test_macros() {
     assert_eq!(r#macro.params[1].name().kind, IdentKind::Map);
     assert_eq!(r#macro.params[2].name().kind, IdentKind::Bare);
 
-    let Preamble::Probe(probe) = &prog.preambles[1] else {
+    let ActionBlock::Probe(probe) = &prog.action_blocks[1] else {
         panic!("not a probe!");
     };
     let Statement::Expr(call, _) = &probe.block.statements[0] else {
@@ -266,7 +266,7 @@ fn test_structs() {
     parse_no_errors("struct Foo { int32 x; }\nBEGIN { $f = (struct Foo *)curtask; }");
 
     let prog = parse("struct Foo { int32 x; uint64 name; }").unwrap();
-    let Preamble::CDef(cdef) = &prog.preambles[0] else {
+    let ActionBlock::CDef(cdef) = &prog.action_blocks[0] else {
         panic!("not a cdef!");
     };
     let CDef::Struct(def) = cdef.as_ref() else {
@@ -286,7 +286,7 @@ fn test_structs() {
 fn test_map() {
     let prog = parse("BEGIN { @map[1] = 2; }").unwrap();
 
-    let Preamble::Probe(probe) = &prog.preambles[0] else {
+    let ActionBlock::Probe(probe) = &prog.action_blocks[0] else {
         panic!("not a probe!");
     };
 

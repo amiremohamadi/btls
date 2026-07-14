@@ -129,8 +129,8 @@ cfg_value  = { identifier | number | string }
 cfg_assign = { identifier ~ "=" ~ cfg_value? ~ ";"? }
 cfg_block  = { "config" ~ "=" ~ "{" ~ (comment | cfg_assign | error)* ~ "}" }
 
-preamble        =  { cfg_block | cdef | macro_def | probe }
+action_block    =  { cfg_block | cdef | macro_def | probe }
 error           =  { rest_of_line }
 rest_of_line    = @{ (!(NEWLINE | "}") ~ ANY)+ ~ NEWLINE? }
 unmatched_brace =  { "}" }
-program         =  { SOI ~ (comment | preamble | error | unmatched_brace)* ~ EOI }
+program         =  { SOI ~ (comment | action_block | error | unmatched_brace)* ~ EOI }

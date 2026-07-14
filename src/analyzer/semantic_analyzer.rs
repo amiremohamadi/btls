@@ -3,14 +3,14 @@ use std::sync::Arc;
 
 use super::OwnedAnalyzedProgram;
 use super::analyzed::{
-    AnalyzedBlock, AnalyzedElseBranch, AnalyzedPreamble, AnalyzedProgram, AnalyzedStatement,
+    AnalyzedActionBlock, AnalyzedBlock, AnalyzedElseBranch, AnalyzedProgram, AnalyzedStatement,
 };
 use crate::btf::{self, BtfScope};
 use crate::builtins::BUILTINS;
 use crate::common::utils::OwnedLineIndex;
 use crate::parser::{
-    Block, CDef, Else, Expr, FieldMember, IdentKind, Loop, Lvalue, MacroDefinition, MacroParam,
-    MacroParamKind, Node, Preamble, Probe, Program, Statement, TypeKind, TypeName, UnaryOp,
+    ActionBlock, Block, CDef, Else, Expr, FieldMember, IdentKind, Loop, Lvalue, MacroDefinition,
+    MacroParam, MacroParamKind, Node, Probe, Program, Statement, TypeKind, TypeName, UnaryOp,
     UndefinedFunc, UndefinedIdent,
 };
 use crate::server::Context;
@@ -91,8 +91,8 @@ fn merge_vars(raw: Vec<RawVar>) -> Vec<VarInfo> {
 
 fn collect_defines(program: &Program) -> Vec<RawVar> {
     let mut defines = Vec::new();
-    for preamble in &program.preambles {
-        if let Preamble::CDef(cdef) = preamble {
+    for action_block in &program.action_blocks {
+        if let ActionBlock::CDef(cdef) = action_block {
             if let CDef::Define(define) = cdef.as_ref() {
                 defines.push((
                     define.name.name.to_string(),
@@ -109,8 +109,8 @@ fn collect_defines(program: &Program) -> Vec<RawVar> {
 
 pub fn collect_macros<'a>(program: &'a Program<'a>) -> HashMap<String, &'a MacroDefinition<'a>> {
     let mut macros = HashMap::new();
-    for preamble in &program.preambles {
-        if let Preamble::Macro(r#macro) = preamble {
+    for action_block in &program.action_blocks {
+        if let ActionBlock::Macro(r#macro) = action_block {
             macros.insert(r#macro.name.name.to_string(), r#macro.as_ref());
         }
     }
@@ -122,10 +122,10 @@ pub fn macros_at<'a>(
     offset: usize,
 ) -> Vec<&'a MacroDefinition<'a>> {
     analyzed
-        .preambles
+        .action_blocks
         .iter()
-        .filter_map(|preamble| match preamble {
-            AnalyzedPreamble::Macro(m, _) if m.span.start() <= offset => Some(*m),
+        .filter_map(|action_block| match action_block {
+            AnalyzedActionBlock::Macro(m, _) if m.span.start() <= offset => Some(*m),
             _ => None,
         })
         .collect()
@@ -231,8 +231,8 @@ impl<'a> StructScope<'a> {
 
 pub fn collect_structs(program: &Program) -> HashMap<String, StructInfo> {
     let mut structs = HashMap::new();
-    for preamble in &program.preambles {
-        if let Preamble::CDef(cdef) = preamble {
+    for action_block in &program.action_blocks {
+        if let ActionBlock::CDef(cdef) = action_block {
             if let CDef::Struct(def) = cdef.as_ref() {
                 let info = StructInfo {
                     fields: def
@@ -277,16 +277,16 @@ pub fn var_types_at(
     btf_scopes: &HashMap<String, Arc<BtfScope>>,
 ) -> HashMap<String, TypeInfo> {
     let scope = StructScope::new(base);
-    for preamble in &program.preambles {
-        if !(preamble.span().start() <= offset && offset < preamble.span().end()) {
+    for action_block in &program.action_blocks {
+        if !(action_block.span().start() <= offset && offset < action_block.span().end()) {
             continue;
         }
-        match preamble {
-            AnalyzedPreamble::Probe(probe, block) => {
+        match action_block {
+            AnalyzedActionBlock::Probe(probe, block) => {
                 let args = probe_args_layer(probe, btf_scopes);
                 return block_var_types(block, &scope.with(&args));
             }
-            AnalyzedPreamble::Macro(_, block) => {
+            AnalyzedActionBlock::Macro(_, block) => {
                 return block_var_types(block, &scope);
             }
             _ => {}
@@ -366,10 +366,13 @@ pub fn resolve_expr_type(
 
 fn collect_global_maps(program: &Program) -> Vec<RawVar> {
     let mut maps = Vec::new();
-    for preamble in &program.preambles {
-        match preamble {
-            Preamble::Probe(probe) => collect_maps_in_block(&probe.block, &mut maps),
-            Preamble::CDef(_) | Preamble::Macro(_) | Preamble::Config(_) | Preamble::Error(_) => {}
+    for action_block in &program.action_blocks {
+        match action_block {
+            ActionBlock::Probe(probe) => collect_maps_in_block(&probe.block, &mut maps),
+            ActionBlock::CDef(_)
+            | ActionBlock::Macro(_)
+            | ActionBlock::Config(_)
+            | ActionBlock::Error(_) => {}
         }
     }
     maps
@@ -458,13 +461,13 @@ fn collect_maps_in_else(else_branch: &Else, maps: &mut Vec<RawVar>) {
 
 pub fn variables_at(file: &AnalyzedFile, offset: usize) -> Vec<VarInfo> {
     let mut raw = Vec::new();
-    for preamble in &file.analyzed().preambles {
-        let span = preamble.span();
+    for action_block in &file.analyzed().action_blocks {
+        let span = action_block.span();
         if span.start() > offset {
             break;
         }
         if span.start() <= offset && offset < span.end() {
-            collect_vars_in_preamble(preamble, offset, &mut raw);
+            collect_vars_in_action_block(action_block, offset, &mut raw);
         }
     }
     raw.extend(collect_global_maps(file.ast()));
@@ -472,9 +475,13 @@ pub fn variables_at(file: &AnalyzedFile, offset: usize) -> Vec<VarInfo> {
     merge_vars(raw)
 }
 
-fn collect_vars_in_preamble(preamble: &AnalyzedPreamble, offset: usize, vars: &mut Vec<RawVar>) {
-    match preamble {
-        AnalyzedPreamble::Probe(_, block) => {
+fn collect_vars_in_action_block(
+    action_block: &AnalyzedActionBlock,
+    offset: usize,
+    vars: &mut Vec<RawVar>,
+) {
+    match action_block {
+        AnalyzedActionBlock::Probe(_, block) => {
             collect_vars_in_block(block, offset, vars);
         }
         _ => {}
@@ -557,11 +564,11 @@ struct ErrorChecker<'a> {
 
 impl<'a> ErrorChecker<'a> {
     fn check_program(&mut self, analyzed: &'a AnalyzedProgram<'a>) {
-        for preamble in &analyzed.preambles {
-            match preamble {
-                AnalyzedPreamble::Probe(probe, block) => self.check_probe(probe, block),
-                AnalyzedPreamble::CDef(_) => {}
-                AnalyzedPreamble::AnalyzedStruct(def) => {
+        for action_block in &analyzed.action_blocks {
+            match action_block {
+                AnalyzedActionBlock::Probe(probe, block) => self.check_probe(probe, block),
+                AnalyzedActionBlock::CDef(_) => {}
+                AnalyzedActionBlock::AnalyzedStruct(def) => {
                     let mut fields = def.fields.iter().peekable();
                     while let Some(field) = fields.next() {
                         if fields.peek().is_some() && !field.has_semicolon() {
@@ -583,9 +590,9 @@ impl<'a> ErrorChecker<'a> {
                         }
                     }
                 }
-                AnalyzedPreamble::Macro(m, block) => self.check_macro(m, block),
-                AnalyzedPreamble::Config(_) => {}
-                AnalyzedPreamble::Error(e) => {
+                AnalyzedActionBlock::Macro(m, block) => self.check_macro(m, block),
+                AnalyzedActionBlock::Config(_) => {}
+                AnalyzedActionBlock::Error(e) => {
                     self.push_span(e.span(), DiagnosticSeverity::ERROR, e.diagnosis())
                 }
             }
@@ -965,8 +972,8 @@ fn resolve_btf_scopes(
     struct_defs: &mut HashMap<String, StructInfo>,
 ) -> HashMap<String, Arc<BtfScope>> {
     let mut scopes = HashMap::new();
-    for preamble in &program.preambles {
-        let Preamble::Probe(probe) = preamble else {
+    for action_block in &program.action_blocks {
+        let ActionBlock::Probe(probe) = action_block else {
             continue;
         };
         let Some(func) = btf::probe_func(&probe.attach_points) else {

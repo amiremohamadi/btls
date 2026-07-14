@@ -7,12 +7,12 @@ use pest::{
 };
 
 use super::{
-    ArgNExpr, AssignOp, Assignment, BinaryExpr, Block, CDef, Call, CastExpr, Config,
-    ConfigAssignment, Define, Else, ErrorPreamble, ErrorStatement, Expr, FieldAccess, FieldDecl,
+    ActionBlock, ArgNExpr, AssignOp, Assignment, BinaryExpr, Block, CDef, Call, CastExpr, Config,
+    ConfigAssignment, Define, Else, ErrorActionBlock, ErrorStatement, Expr, FieldAccess, FieldDecl,
     FieldMember, For, IdentKind, Identifier, If, Include, IntegerLiteral, Loop, Lvalue,
-    MacroDefinition, MacroParam, MapAccess, Node, Preamble, Probe, Program, Statement,
-    StringLiteral, StructDef, Tuple, TypeKind, TypeName, UnaryExpr, UnaryOp, UnknownPreamble,
-    UnknownStatement, UnmatchedBrace, Unroll, While,
+    MacroDefinition, MacroParam, MapAccess, Node, Probe, Program, Statement, StringLiteral,
+    StructDef, Tuple, TypeKind, TypeName, UnaryExpr, UnaryOp, UnknownActionBlock, UnknownStatement,
+    UnmatchedBrace, Unroll, While,
 };
 
 #[derive(pest_derive::Parser)]
@@ -722,14 +722,14 @@ fn convert_config(pair: Pair<Rule>) -> Config {
     Config { assignments, span }
 }
 
-fn convert_preamble<'a>(pair: Pair<'a, Rule>, comments: Vec<&'a str>) -> Preamble<'a> {
-    assert!(matches!(pair.as_rule(), Rule::preamble));
+fn convert_action_block<'a>(pair: Pair<'a, Rule>, comments: Vec<&'a str>) -> ActionBlock<'a> {
+    assert!(matches!(pair.as_rule(), Rule::action_block));
     let pair = pair.into_inner().exactly_one().unwrap();
     match pair.as_rule() {
-        Rule::cfg_block => Preamble::Config(Box::new(convert_config(pair))),
-        Rule::probe => Preamble::Probe(convert_probe(pair)),
-        Rule::cdef => Preamble::CDef(Box::new(convert_cdef(pair))),
-        Rule::macro_def => Preamble::Macro(Box::new(convert_macro_def(pair, comments))),
+        Rule::cfg_block => ActionBlock::Config(Box::new(convert_config(pair))),
+        Rule::probe => ActionBlock::Probe(convert_probe(pair)),
+        Rule::cdef => ActionBlock::CDef(Box::new(convert_cdef(pair))),
+        Rule::macro_def => ActionBlock::Macro(Box::new(convert_macro_def(pair, comments))),
         _ => unreachable!(),
     }
 }
@@ -738,29 +738,32 @@ fn convert_prog(pair: Pair<Rule>) -> Program {
     assert!(matches!(pair.as_rule(), Rule::program));
     let span = pair.as_span();
     let mut comments = Vec::new();
-    let preambles = pair
+    let action_blocks = pair
         .into_inner()
         .filter_map(|pair| match pair.as_rule() {
             Rule::comment => {
                 comments.push(convert_comment(pair));
                 None
             }
-            Rule::preamble => Some(convert_preamble(pair, std::mem::take(&mut comments))),
-            Rule::error => Some(Preamble::Error(Box::new(ErrorPreamble::UnknownPreamble(
-                Box::new(UnknownPreamble {
+            Rule::action_block => Some(convert_action_block(pair, std::mem::take(&mut comments))),
+            Rule::error => Some(ActionBlock::Error(Box::new(
+                ErrorActionBlock::UnknownActionBlock(Box::new(UnknownActionBlock {
                     text: pair.as_str(),
                     span: pair.as_span(),
-                }),
-            )))),
-            Rule::unmatched_brace => Some(Preamble::Error(Box::new(
-                ErrorPreamble::UnmatchedBrace(Box::new(UnmatchedBrace {
+                })),
+            ))),
+            Rule::unmatched_brace => Some(ActionBlock::Error(Box::new(
+                ErrorActionBlock::UnmatchedBrace(Box::new(UnmatchedBrace {
                     span: pair.as_span(),
                 })),
             ))),
             _ => None,
         })
         .collect();
-    Program { preambles, span }
+    Program {
+        action_blocks,
+        span,
+    }
 }
 
 pub fn parse(input: &str) -> Result<Program<'_>> {

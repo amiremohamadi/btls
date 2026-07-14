@@ -912,18 +912,18 @@ impl<'a> Node<'a> for UnmatchedBrace<'a> {
 }
 
 #[derive(Debug)]
-pub struct UnknownPreamble<'a> {
+pub struct UnknownActionBlock<'a> {
     pub text: &'a str,
     pub span: Span<'a>,
 }
 
-impl<'a> UnknownPreamble<'a> {
+impl<'a> UnknownActionBlock<'a> {
     pub fn diagnosis(&self) -> String {
-        format!("Unknown preamble \"{}\"", self.text.trim())
+        format!("Unknown action block \"{}\"", self.text.trim())
     }
 }
 
-impl<'a> Node<'a> for UnknownPreamble<'a> {
+impl<'a> Node<'a> for UnknownActionBlock<'a> {
     fn as_node(&self) -> &dyn Node<'a> {
         self
     }
@@ -938,35 +938,35 @@ impl<'a> Node<'a> for UnknownPreamble<'a> {
 }
 
 #[derive(Debug)]
-pub enum ErrorPreamble<'a> {
-    UnknownPreamble(Box<UnknownPreamble<'a>>),
+pub enum ErrorActionBlock<'a> {
+    UnknownActionBlock(Box<UnknownActionBlock<'a>>),
     UnmatchedBrace(Box<UnmatchedBrace<'a>>),
 }
 
-impl<'a> ErrorPreamble<'a> {
+impl<'a> ErrorActionBlock<'a> {
     pub fn diagnosis(&self) -> String {
         match self {
-            Self::UnknownPreamble(e) => e.diagnosis(),
+            Self::UnknownActionBlock(e) => e.diagnosis(),
             Self::UnmatchedBrace(e) => e.diagnosis(),
         }
     }
 }
 
-impl<'a> Node<'a> for ErrorPreamble<'a> {
+impl<'a> Node<'a> for ErrorActionBlock<'a> {
     fn as_node(&self) -> &dyn Node<'a> {
         self
     }
 
     fn children(&self) -> Vec<&dyn Node<'a>> {
         match self {
-            Self::UnknownPreamble(x) => vec![x.as_node()],
+            Self::UnknownActionBlock(x) => vec![x.as_node()],
             Self::UnmatchedBrace(x) => vec![x.as_node()],
         }
     }
 
     fn span(&self) -> Span<'a> {
         match self {
-            Self::UnknownPreamble(x) => x.span(),
+            Self::UnknownActionBlock(x) => x.span(),
             Self::UnmatchedBrace(x) => x.span(),
         }
     }
@@ -1018,15 +1018,15 @@ impl<'a> Node<'a> for Config<'a> {
 }
 
 #[derive(Debug)]
-pub enum Preamble<'a> {
+pub enum ActionBlock<'a> {
     Probe(Probe<'a>),
     CDef(Box<CDef<'a>>),
     Macro(Box<MacroDefinition<'a>>),
     Config(Box<Config<'a>>),
-    Error(Box<ErrorPreamble<'a>>),
+    Error(Box<ErrorActionBlock<'a>>),
 }
 
-impl<'a> Node<'a> for Preamble<'a> {
+impl<'a> Node<'a> for ActionBlock<'a> {
     fn as_node(&self) -> &dyn Node<'a> {
         self
     }
@@ -1195,7 +1195,7 @@ impl<'a> Node<'a> for Probe<'a> {
 
 #[derive(Debug)]
 pub struct Program<'a> {
-    pub preambles: Vec<Preamble<'a>>,
+    pub action_blocks: Vec<ActionBlock<'a>>,
     // pub probes: Vec<Probe<'a>>,
     pub span: Span<'a>,
 }
@@ -1206,7 +1206,7 @@ impl<'a> Node<'a> for Program<'a> {
     }
 
     fn children(&self) -> Vec<&dyn Node<'a>> {
-        self.preambles.iter().map(|p| p.as_node()).collect()
+        self.action_blocks.iter().map(|p| p.as_node()).collect()
     }
 
     fn span(&self) -> Span<'a> {

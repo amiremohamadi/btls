@@ -1,8 +1,8 @@
 use pest::Span;
 
 use crate::parser::{
-    Assignment, Block, CDef, Config, Else, ErrorPreamble, ErrorStatement, Expr, FieldDecl,
-    Identifier, If, Loop, MacroDefinition, Node, Preamble, Probe, Program, Statement,
+    ActionBlock, Assignment, Block, CDef, Config, Else, ErrorActionBlock, ErrorStatement, Expr,
+    FieldDecl, Identifier, If, Loop, MacroDefinition, Node, Probe, Program, Statement,
 };
 
 #[derive(Clone)]
@@ -115,16 +115,16 @@ pub struct AnalyzedStructDef<'a> {
 }
 
 #[derive(Clone)]
-pub enum AnalyzedPreamble<'a> {
+pub enum AnalyzedActionBlock<'a> {
     Probe(&'a Probe<'a>, AnalyzedBlock<'a>),
     Macro(&'a MacroDefinition<'a>, AnalyzedBlock<'a>),
     CDef(&'a CDef<'a>),
     AnalyzedStruct(AnalyzedStructDef<'a>),
     Config(&'a Config<'a>),
-    Error(&'a ErrorPreamble<'a>),
+    Error(&'a ErrorActionBlock<'a>),
 }
 
-impl<'a> AnalyzedPreamble<'a> {
+impl<'a> AnalyzedActionBlock<'a> {
     pub fn span(&self) -> Span<'a> {
         match self {
             Self::Probe(p, _) => p.span(),
@@ -139,23 +139,27 @@ impl<'a> AnalyzedPreamble<'a> {
 
 #[derive(Clone)]
 pub struct AnalyzedProgram<'a> {
-    pub preambles: Vec<AnalyzedPreamble<'a>>,
+    pub action_blocks: Vec<AnalyzedActionBlock<'a>>,
     #[allow(dead_code)]
     pub span: Span<'a>,
 }
 
 pub fn analyze_program<'a>(program: &'a Program<'a>) -> AnalyzedProgram<'a> {
     AnalyzedProgram {
-        preambles: program.preambles.iter().map(analyze_preamble).collect(),
+        action_blocks: program
+            .action_blocks
+            .iter()
+            .map(analyze_action_block)
+            .collect(),
         span: program.span,
     }
 }
 
-fn analyze_preamble<'a>(preamble: &'a Preamble<'a>) -> AnalyzedPreamble<'a> {
-    match preamble {
-        Preamble::Probe(probe) => AnalyzedPreamble::Probe(probe, analyze_block(&probe.block)),
-        Preamble::Macro(m) => AnalyzedPreamble::Macro(m.as_ref(), analyze_block(&m.body)),
-        Preamble::CDef(cdef) => match cdef.as_ref() {
+fn analyze_action_block<'a>(action_block: &'a ActionBlock<'a>) -> AnalyzedActionBlock<'a> {
+    match action_block {
+        ActionBlock::Probe(probe) => AnalyzedActionBlock::Probe(probe, analyze_block(&probe.block)),
+        ActionBlock::Macro(m) => AnalyzedActionBlock::Macro(m.as_ref(), analyze_block(&m.body)),
+        ActionBlock::CDef(cdef) => match cdef.as_ref() {
             CDef::Struct(def) => {
                 let fields: Vec<AnalyzedFieldDecl> = def
                     .fields
@@ -165,15 +169,15 @@ fn analyze_preamble<'a>(preamble: &'a Preamble<'a>) -> AnalyzedPreamble<'a> {
                         has_semicolon: *has_semicolon,
                     })
                     .collect();
-                AnalyzedPreamble::AnalyzedStruct(AnalyzedStructDef {
+                AnalyzedActionBlock::AnalyzedStruct(AnalyzedStructDef {
                     fields,
                     span: def.span,
                 })
             }
-            _ => AnalyzedPreamble::CDef(cdef.as_ref()),
+            _ => AnalyzedActionBlock::CDef(cdef.as_ref()),
         },
-        Preamble::Config(c) => AnalyzedPreamble::Config(c.as_ref()),
-        Preamble::Error(e) => AnalyzedPreamble::Error(e.as_ref()),
+        ActionBlock::Config(c) => AnalyzedActionBlock::Config(c.as_ref()),
+        ActionBlock::Error(e) => AnalyzedActionBlock::Error(e.as_ref()),
     }
 }
 
