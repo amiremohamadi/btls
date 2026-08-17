@@ -118,10 +118,12 @@ probe             =  { attach_point_list ~ probe_condition? ~ block }
 
 cdef         =  { include | define | struct_def }
 include      = ${ "#include" ~ SPACE+ ~ include_path }
-include_path = @{ "<" ~ (!(">" | NEWLINE) ~ ANY)* ~ ">" }
+include_path = { "<" ~ (!(">" | NEWLINE) ~ ANY)* ~ ">" | string }
 define       = ${ "#define" ~ SPACE+ ~ identifier ~ (SPACE+ ~ define_body)? }
 define_body  = @{ (!NEWLINE ~ ANY)+ }
 struct_def   =  { struct_kw ~ identifier ~ "{" ~ (field_decl | comment | error)* ~ "}" ~ ";"? }
+
+import       =  { "import" ~ string ~ ";"? }
 field_decl   =  { type_name ~ identifier ~ array_suffix? ~ ";"? }
 array_suffix =  { "[" ~ number ~ "]" }
 
@@ -129,7 +131,7 @@ cfg_value  = { identifier | number | string }
 cfg_assign = { identifier ~ "=" ~ cfg_value? ~ ";"? }
 cfg_block  = { "config" ~ "=" ~ "{" ~ (comment | cfg_assign | error)* ~ "}" }
 
-action_block    =  { cfg_block | cdef | macro_def | probe }
+action_block    =  { cfg_block | cdef | macro_def | probe | import }
 error           =  { rest_of_line }
 rest_of_line    = @{ (!(NEWLINE | "}") ~ ANY)+ ~ NEWLINE? }
 unmatched_brace =  { "}" }

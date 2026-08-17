@@ -9,7 +9,7 @@ use pest::{
 use super::{
     ActionBlock, ArgNExpr, AssignOp, Assignment, BinaryExpr, Block, CDef, Call, CastExpr, Config,
     ConfigAssignment, Define, Else, ErrorActionBlock, ErrorStatement, Expr, FieldAccess, FieldDecl,
-    FieldMember, For, IdentKind, Identifier, If, Include, IntegerLiteral, Loop, Lvalue,
+    FieldMember, For, IdentKind, Identifier, If, Import, Include, IntegerLiteral, Loop, Lvalue,
     MacroDefinition, MacroParam, MapAccess, Node, Probe, Program, Statement, StringLiteral,
     StructDef, Tuple, TypeKind, TypeName, UnaryExpr, UnaryOp, UnknownActionBlock, UnknownStatement,
     UnmatchedBrace, Unroll, While,
@@ -637,6 +637,12 @@ fn convert_include(pair: Pair<Rule>) -> Include {
     Include { span }
 }
 
+fn convert_import(pair: Pair<Rule>) -> Import {
+    assert!(matches!(pair.as_rule(), Rule::import));
+    let span = pair.as_span();
+    Import { span }
+}
+
 fn convert_define(pair: Pair<Rule>) -> Define {
     assert!(matches!(pair.as_rule(), Rule::define));
     let span = pair.as_span();
@@ -730,6 +736,7 @@ fn convert_action_block<'a>(pair: Pair<'a, Rule>, comments: Vec<&'a str>) -> Act
         Rule::probe => ActionBlock::Probe(convert_probe(pair)),
         Rule::cdef => ActionBlock::CDef(Box::new(convert_cdef(pair))),
         Rule::macro_def => ActionBlock::Macro(Box::new(convert_macro_def(pair, comments))),
+        Rule::import => ActionBlock::Import(Box::new(convert_import(pair))),
         _ => unreachable!(),
     }
 }

@@ -88,6 +88,9 @@ fn test_sanity() {
     parse_no_errors("#define MAX 100");
     parse_no_errors("#define FLAG");
     parse_no_errors("#include <linux/sched.h>\n#define MAX 100\nBEGIN { $x = MAX; }");
+    parse_no_errors("#include \"helpers.h\"");
+
+    parse_no_errors("import \"lib/my_lib\";\nimport \"other.bt\";");
 
     parse_has_errors("#define ADD(a, b) ((a) + (b))");
     parse_has_errors("BEGIN { @m[] = 2; }");

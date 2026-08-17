@@ -1023,6 +1023,7 @@ pub enum ActionBlock<'a> {
     CDef(Box<CDef<'a>>),
     Macro(Box<MacroDefinition<'a>>),
     Config(Box<Config<'a>>),
+    Import(Box<Import<'a>>),
     Error(Box<ErrorActionBlock<'a>>),
 }
 
@@ -1044,6 +1045,7 @@ impl<'a> Node<'a> for ActionBlock<'a> {
             Self::CDef(c) => vec![c.as_node()],
             Self::Macro(m) => vec![m.as_node()],
             Self::Config(c) => vec![c.as_node()],
+            Self::Import(i) => vec![i.as_node()],
             Self::Error(e) => vec![e.as_node()],
         }
     }
@@ -1054,6 +1056,7 @@ impl<'a> Node<'a> for ActionBlock<'a> {
             Self::CDef(c) => c.span(),
             Self::Macro(m) => m.span(),
             Self::Config(c) => c.span(),
+            Self::Import(i) => i.span(),
             Self::Error(e) => e.span(),
         }
     }
@@ -1138,6 +1141,25 @@ pub struct Include<'a> {
 }
 
 impl<'a> Node<'a> for Include<'a> {
+    fn as_node(&self) -> &dyn Node<'a> {
+        self
+    }
+
+    fn children(&self) -> Vec<&dyn Node<'a>> {
+        Vec::new()
+    }
+
+    fn span(&self) -> Span<'a> {
+        self.span
+    }
+}
+
+#[derive(Debug)]
+pub struct Import<'a> {
+    pub span: Span<'a>,
+}
+
+impl<'a> Node<'a> for Import<'a> {
     fn as_node(&self) -> &dyn Node<'a> {
         self
     }

@@ -372,6 +372,7 @@ fn collect_global_maps(program: &Program) -> Vec<RawVar> {
             ActionBlock::CDef(_)
             | ActionBlock::Macro(_)
             | ActionBlock::Config(_)
+            | ActionBlock::Import(_)
             | ActionBlock::Error(_) => {}
         }
     }
@@ -592,6 +593,7 @@ impl<'a> ErrorChecker<'a> {
                 }
                 AnalyzedActionBlock::Macro(m, block) => self.check_macro(m, block),
                 AnalyzedActionBlock::Config(_) => {}
+                AnalyzedActionBlock::Import(_) => {}
                 AnalyzedActionBlock::Error(e) => {
                     self.push_span(e.span(), DiagnosticSeverity::ERROR, e.diagnosis())
                 }

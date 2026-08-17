@@ -2,7 +2,7 @@ use pest::Span;
 
 use crate::parser::{
     ActionBlock, Assignment, Block, CDef, Config, Else, ErrorActionBlock, ErrorStatement, Expr,
-    FieldDecl, Identifier, If, Loop, MacroDefinition, Node, Probe, Program, Statement,
+    FieldDecl, Identifier, If, Import, Loop, MacroDefinition, Node, Probe, Program, Statement,
 };
 
 #[derive(Clone)]
@@ -121,6 +121,7 @@ pub enum AnalyzedActionBlock<'a> {
     CDef(&'a CDef<'a>),
     AnalyzedStruct(AnalyzedStructDef<'a>),
     Config(&'a Config<'a>),
+    Import(&'a Import<'a>),
     Error(&'a ErrorActionBlock<'a>),
 }
 
@@ -132,6 +133,7 @@ impl<'a> AnalyzedActionBlock<'a> {
             Self::CDef(c) => c.span(),
             Self::AnalyzedStruct(s) => s.span,
             Self::Config(c) => c.span(),
+            Self::Import(i) => i.span(),
             Self::Error(e) => e.span(),
         }
     }
@@ -177,6 +179,7 @@ fn analyze_action_block<'a>(action_block: &'a ActionBlock<'a>) -> AnalyzedAction
             _ => AnalyzedActionBlock::CDef(cdef.as_ref()),
         },
         ActionBlock::Config(c) => AnalyzedActionBlock::Config(c.as_ref()),
+        ActionBlock::Import(i) => AnalyzedActionBlock::Import(i.as_ref()),
         ActionBlock::Error(e) => AnalyzedActionBlock::Error(e.as_ref()),
     }
 }
