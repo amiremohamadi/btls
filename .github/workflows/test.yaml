@@ -16,22 +16,37 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo install pest_fmt
+      - name: rustfmt
+        run: cargo fmt --check
+      - name: pestfmt
+        run: |
+          pestfmt src/parser/bpftrace.pest
+          git diff --exit-code src/parser/bpftrace.pest
+
   unit-test:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: setup python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.x'
+      - name: setup python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
 
-    - name: install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r ./scripts/requirements.txt
+      - name: install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r ./scripts/requirements.txt
 
-    - name: Run unit tests
-      run: cargo test --verbose
-      env:
-        BTF_VMLINUX_PATH: tests/data/vmlinux
+      - name: Run unit tests
+        run: cargo test --verbose
+        env:
+          BTF_VMLINUX_PATH: tests/data/vmlinux

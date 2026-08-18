@@ -52,8 +52,12 @@
           "name": "keyword.control.if.bpftrace"
         },
         {
-          "match": "\\b(for|while)\\b",
+          "match": "\\b(for|while|unroll)\\b",
           "name": "keyword.control.loop.bpftrace"
+        },
+        {
+          "match": "\\b(import|macro|config|struct|union|return|break|continue)\\b",
+          "name": "keyword.other.bpftrace"
         }
       ]
     },

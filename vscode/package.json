@@ -1,0 +1,47 @@
+{
+  "name": "btls",
+  "displayName": "bpftrace",
+  "description": "Language support for bpftrace",
+  "version": "0.1.0",
+  "publisher": "btls",
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "bpftrace",
+      "properties": {
+        "btls.diagnostics": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable diagnostic error reporting"
+        }
+      }
+    },
+    "languages": [
+      {
+        "id": "bpftrace",
+        "aliases": [
+          "bpftrace",
+          "bt"
+        ],
+        "extensions": [
+          ".bt",
+          ".bpftrace"
+        ],
+        "configuration": "./languages/bt.language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "bpftrace",
+        "scopeName": "source.bpftrace",
+        "path": "./syntaxes/bt.tmLanguage.json"
+      }
+    ]
+  }
+}
