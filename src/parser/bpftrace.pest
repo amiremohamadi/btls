@@ -118,14 +118,14 @@ probe             =  { attach_point_list ~ probe_condition? ~ block }
 
 cdef         =  { include | define | struct_def }
 include      = ${ "#include" ~ SPACE+ ~ include_path }
-include_path = { "<" ~ (!(">" | NEWLINE) ~ ANY)* ~ ">" | string }
+include_path =  { "<" ~ (!(">" | NEWLINE) ~ ANY)* ~ ">" | string }
 define       = ${ "#define" ~ SPACE+ ~ identifier ~ (SPACE+ ~ define_body)? }
 define_body  = @{ (!NEWLINE ~ ANY)+ }
 struct_def   =  { struct_kw ~ identifier ~ "{" ~ (field_decl | comment | error)* ~ "}" ~ ";"? }
 
-import       =  { "import" ~ string ~ ";"? }
-field_decl   =  { type_name ~ identifier ~ array_suffix? ~ ";"? }
-array_suffix =  { "[" ~ number ~ "]" }
+import       = { "import" ~ string ~ ";"? }
+field_decl   = { type_name ~ identifier ~ array_suffix? ~ ";"? }
+array_suffix = { "[" ~ number ~ "]" }
 
 cfg_value  = { identifier | number | string }
 cfg_assign = { identifier ~ "=" ~ cfg_value? ~ ";"? }
