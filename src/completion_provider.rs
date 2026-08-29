@@ -304,7 +304,7 @@ mod tests {
         let items = cfg_completion(c, cursor);
         let labels: Vec<_> = items.iter().map(|i| i.label.as_str()).collect();
 
-        assert_eq!(labels, vec!["bpftrace", "perf", "raw"]);
+        assert_eq!(labels, vec!["bpftrace", "perf", "raw", "build_id"]);
     }
 
     #[test]
